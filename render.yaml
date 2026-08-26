@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: mi-coleccion-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: API_KEY
+        sync: false
+      - key: IGDB_CLIENT_ID
+        sync: false
+      - key: IGDB_CLIENT_SECRET
+        sync: false

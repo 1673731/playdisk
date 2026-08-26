@@ -1,0 +1,158 @@
+{
+  "app_name": "Mi Colección",
+  "personality": "6 Glass / Luxe DARK mixed with 7 Dark-First Utility",
+  "personality_one_liner": "A sleek, dark, neon-accented sanctuary for video game collectors featuring cinematic glassmorphism and electric purple-blue accents.",
+  "color": {
+    "surface": "#050614",
+    "onSurface": "#F8FAFC",
+    "surfaceSecondary": "#0D1126",
+    "onSurfaceSecondary": "#E2E8F0",
+    "surfaceTertiary": "#1A1F3B",
+    "onSurfaceTertiary": "#CBD5E1",
+    "surfaceInverse": "#FFFFFF",
+    "onSurfaceInverse": "#050614",
+    "brand": "#6366F1",
+    "brandPrimary": "#6366F1",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#4338CA",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#1E1B4B",
+    "onBrandTertiary": "#A5B4FC",
+    "success": "#10B981",
+    "onSuccess": "#FFFFFF",
+    "warning": "#F59E0B",
+    "onWarning": "#FFFFFF",
+    "error": "#EF4444",
+    "onError": "#FFFFFF",
+    "info": "#3B82F6",
+    "onInfo": "#FFFFFF",
+    "border": "#1E293B",
+    "borderStrong": "#334155",
+    "divider": "#0F172A"
+  },
+  "typography": {
+    "displayFontFamily": "Space Grotesk",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous padding around content to allow neon accents and glass surfaces to breathe. Tighter spacing inside game cards.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "2",
+  "navigation": "bottom_tabs",
+  "icon_set": "MaterialCommunityIcons",
+  "glassmorphism": {
+    "enabled": "true",
+    "do's": [
+      "Use heavy glass blur on the custom bottom tab bar.",
+      "Use glass blur for the header when scrolling down.",
+      "Apply a subtle glowing shadow under active tab icons or primary CTAs."
+    ],
+    "dont's": [
+      "Do not blur individual game cards in lists.",
+      "Do not make form inputs glass."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Home",
+      "purpose": "Dashboard to view total collection count, filter by platforms, and see recently added games.",
+      "states": {
+        "loading": "Centered glowing spinner or skeleton loaders for game cards.",
+        "empty": "Illustration of an empty shelf, encouraging the user to add their first game.",
+        "error": "Error loading collection with a retry button."
+      },
+      "layout": "Header: Settings icon (left), Total Games Counter (center), AI Assistant avatar (right). Below Header: Platform chips (horizontal scroll, 36pt chip / 56pt row / no wrap). Content: 'Últimos añadidos' section showing a horizontal scroll or grid of game cover art. The platform chips act as filters dynamically updating the count and the 'Últimos añadidos' list."
+    },
+    {
+      "name": "Library",
+      "purpose": "Full view of all owned physical games.",
+      "states": {
+        "loading": "Skeleton grid of game covers.",
+        "empty": "Empty state prompting to add games.",
+        "error": "Failed to load library."
+      },
+      "layout": "Grid layout (2 or 3 columns) of game cover art with title and platform indicator. Includes sorting/filtering options."
+    },
+    {
+      "name": "Ranking",
+      "purpose": "Personal ranking or tier list of the user's favorite games.",
+      "states": {
+        "loading": "Loading skeleton.",
+        "empty": "Message to start ranking games.",
+        "error": "Failed to load rankings."
+      },
+      "layout": "Vertical list showing numbered rankings. Large hero card for rank #1."
+    },
+    {
+      "name": "Wishlist",
+      "purpose": "Track games the user wants to buy.",
+      "states": {
+        "loading": "Loading skeleton.",
+        "empty": "Message to add games to wishlist.",
+        "error": "Failed to load wishlist."
+      },
+      "layout": "List view similar to Library but with 'Add to Collection' quick actions on each card."
+    }
+  ],
+  "images": {
+    "ai_assistant_avatar": {
+      "url": "https://images.pexels.com/photos/36847299/pexels-photo-36847299.png?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Futuristic friendly robot AI avatar"
+    },
+    "game_cover_placeholder_1": {
+      "url": "https://images.pexels.com/photos/32772105/pexels-photo-32772105.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Game cover placeholder"
+    },
+    "game_cover_placeholder_2": {
+      "url": "https://images.unsplash.com/photo-1582339980338-c4adc193bd12?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwxfHx2aWRlbyUyMGdhbWUlMjBjb3ZlciUyMGFydCUyMHBvc3RlcnxlbnwwfHx8fDE3ODczMTk5OTN8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Trading cards game cover"
+    }
+  },
+  "haptics": {
+    "tab_press": "light",
+    "chip_select": "light",
+    "shake_trigger": "heavy",
+    "button_press": "medium"
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the user's color request: Use the deep navy/black backgrounds (#050614) with glowing purple-blue (#6366F1) accents.",
+    "Implement the Platform Chips using MaterialCommunityIcons for platform logos (sony-playstation, microsoft-xbox, nintendo-switch, steam). This will look much cleaner than raster PNGs on a dark UI.",
+    "The Bottom Tab Bar MUST be highly customized: It normally shows 5 icons (Inicio, Biblioteca, Ranking, Wishlist, Buscador). When the 'Buscador' (Search) tab is pressed, the other icons should disappear and the Search icon expands into a full text input field dynamically.",
+    "Implement 'Shake to Search': Use expo-sensors (Accelerometer) to detect a shake gesture. When shaken, immediately trigger the expanding search bar in the bottom tab (just like the CEX app mentioned by user). Provide an option in the Settings screen to disable this shake gesture.",
+    "Search functionality: Results should appear dynamically overlaying the current screen content while the user types in the expanded bottom tab input.",
+    "Active state on the Home tab should display a rounded highlight pill in blue/purple with a glow effect.",
+    "Render the AI Assistant button in the top right of the header, using the provided robot avatar image, possibly triggering a bottom sheet or modal for chat."
+  ]
+}

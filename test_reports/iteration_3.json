@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 3 both-track testing completed. Backend: 7/7 new tests pass in /app/backend/tests/test_iteration3.py — stats/summary shape (6-month array filled with zeros, correct KPIs), export/csv (header + 15 rows, text/plain), export/html (contains 'Mi Colección' + tables + Wishlist section), lookup-barcode local (711719560838 → 'God of War Ragnarök', no source key), lookup-barcode online (045496596224 → source='upcitemdb' returned live from UPCitemdb trial API — cached), lookup-barcode invalid (000000000001 → found=false with suggestions[]), and PUT+GET+DELETE+404 on games. Frontend on mobile viewport (390x844): (1) Home 'recent-game-*' cards tap → /game/[id]; game detail shows title, cover, PlayStation pill, price pill '69.99€' and rating stars; tapping detail-rating-7 updates rating (7/10 shown) via PUT; tapping detail-box-bien highlights and persists; delete-game opens modal with delete-cancel/delete-confirm; cancel closes modal correctly. (2) Settings 'settings-open-stats' → /stats: kpi-spent (429.91€), kpi-avg (42.99€), kpi-games (12), kpi-gifts (2), top-platform (PlayStation, 4 juegos), monthly chart (Mar–Ago), Por plataforma bars, and Estado cajas bars; when premium, no locked banner. (3) Settings 'settings-open-export' → /export: export-csv, export-pdf, preview-html visible; tapping export-csv triggers browser download and shows export-toast 'CSV descargado'. (4) FREE-user state: after /api/premium/cancel, /stats shows 'stats-locked' banner + 'stats-cta' → /premium; /export tapping export-csv redirects to /premium. (5) Library, Ranking (uses recent-game-*), and Wishlist tabs — tapping their game cards all navigate to /game/[id]. All navigation, PUT persistence, delete confirm/cancel, premium-gating, and toast flows work as specified.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "game/[id] hero cover", "issue": "Some seed games have unreachable cover_url that return 404 (e.g. Silent Hill 2 Remake, Uncharted 4, Bloodborne). Detail hero shows empty placeholder box on those — cosmetic only. Reference: /app/backend/server.py:151,177,187", "testID": "n/a", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": ["Console warnings (non-blocking): 'shadow*' style props deprecated → use boxShadow; 'textShadow*' deprecated → use textShadow; props.pointerEvents deprecated → use style.pointerEvents. Cosmetic RN-web migration warnings."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3.py",
+    "/app/test_reports/pytest/iter3.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: replace or remove broken cover_url entries in GAMES_SEED (Silent Hill 2 Remake, Uncharted 4, Bloodborne CDN URLs 404). Detail screen falls back to placeholder, so not blocking.",
+    "OPTIONAL RN-web polish: migrate deprecated shadow*/textShadow*/pointerEvents props to their non-deprecated equivalents to silence console warnings on web preview.",
+    "OBSERVATION (no fix required): The Ranking tab reuses testID prefix 'recent-game-*' for its list items instead of a dedicated 'ranking-item-*' prefix. Works fine, but a dedicated prefix would make screen-scoped test selectors clearer."
+  ],
+  "critical_code_review_comments": [
+    "server.py now ~700 lines — right at the split threshold. Recommend splitting into modules: games.py, premium.py, barcode.py, stats.py, export.py, assistant.py.",
+    "UPCitemdb fallback correctly handles errors (returns None on timeout/rate-limit) and caches the result in db.barcodes — good.",
+    "stats_summary correctly excludes wishlist games from totals and excludes gifts from total_spent — matches spec.",
+    "export_csv uses PlainTextResponse so content-type is text/plain — spec says 'text/plain CSV' which matches; if downstream needs Excel to auto-open, could switch to text/csv (non-blocking).",
+    "game/[id].tsx uses raw fetch to EXPO_PUBLIC_BACKEND_URL for GET while other calls go through api.ts — consider unifying via api.getGame(id) for consistency.",
+    "Confirmed all MongoDB reads use {'_id': 0} projection — no ObjectId leaks.",
+    "All interactive elements on the 3 new screens carry testID props as specified (detail-rating-N, detail-box-*, delete-game/confirm/cancel, kpi-*, stats-locked/cta, export-csv/pdf/toast)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3.py (new)",
+    "/app/test_reports/iteration_3.json (new)"
+  ],
+  "success_rate": {"backend": "100% (7/7 new)", "frontend": "100% (all iteration-3 flows verified)"},
+  "seed_data_creation": "One temp game created & deleted inside test_update_and_delete_game (title 'TEST_iter3_game'). One barcode ('045496596224' → 'The Messenger - Nintendo Switch (Digital)') was cached in db.barcodes by the UPCitemdb fallback path — intentional per spec.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Base URL: https://game-library-hub-24.preview.emergentagent.com. Env var name is EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL). To reset scan limits between tests, update Mongo directly at MONGO_URL/DB_NAME (settings._id='user_settings'). For premium-gated flows, POST /api/premium/subscribe first, then POST /api/premium/cancel to restore free state. The UPCitemdb trial API is a real online service with rate limits (~100/day) — the test accepts both 'found=true source=upcitemdb' and 'found=false with suggestions' as valid. Iteration-3 testIDs on detail screen: detail-back, game-title, detail-rating-1..10, detail-box-*/detail-man-*/detail-disc-*, detail-notes, delete-game/delete-cancel/delete-confirm. Ranking uses 'recent-game-*' testID prefix (not 'ranking-item-*'), Library uses 'library-game-*', Wishlist uses 'wishlist-item-*'.",
+  "rca_of_issue": "N/A — no bugs found in iteration 3."
+}

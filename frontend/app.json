@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "Mi Colección",
+    "slug": "mi-coleccion",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "frontend",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.emergent.gamelibraryhub.fgc3ml",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Escanea códigos de barras de tus juegos",
+        "NSMotionUsageDescription": "Detecta el gesto de agitar para abrir el buscador"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.emergent.gamelibraryhub.fgc3ml",
+      "versionCode": 1,
+      "permissions": ["CAMERA"]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Escanea códigos de barras de tus juegos"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-image.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#000000"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

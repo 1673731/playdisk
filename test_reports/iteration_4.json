@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 4: Bug fix for scan-of-unknown-barcode landing silently on manual form. Backend: 12/12 pytest tests pass for new /api/games/search-online (Wikipedia) endpoint incl. Nioh/Nioh 3 detection, platform inference, filter of film/album/book/etc, empty query returns []. Regression checks pass for /api/games/lookup-barcode (known + unknown) and /api/games/{id} (route order not shadowed). Frontend: full add-game flow validated on mobile viewport (390x844). Scanning unknown barcode 4988615178849 → NEW 'notfound' step is reached (testID notfound-hero visible with EAN shown). Searching 'Nioh 3' populates notfound-result-0 = 'Nioh 3 · 2026 video game'. Tapping result → confirm step showing 'Nioh 3' + PlayStation pill (from a secondary result via platform detection). confirm-yes → 'Estado 1/4' box condition. notfound-rescan returns to scan step; notfound-manual navigates to manual data screen. Bug fix verified end-to-end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styles (multiple)", "issue": "Deprecated web style props: 'shadow*' should use 'boxShadow', 'textShadow*' should use 'textShadow', props.pointerEvents deprecated (use style.pointerEvents). Console warnings on every screen load. Reference: /app/frontend/app/add-game.tsx uses shadowColor/shadowOpacity/shadowRadius/shadowOffset and textShadowColor/textShadowRadius, and pointerEvents='none' on scanOverlay View."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/test_reports/pytest/iter4.xml"
+  ],
+  "action_items": [
+    "OPTIONAL cleanup (not blocking bug fix): migrate deprecated RN Web style props in /app/frontend/app/add-game.tsx (shadow*, textShadow*, pointerEvents) to their new APIs to silence console warnings."
+  ],
+  "critical_code_review_comments": [
+    "Route ordering in server.py is correct: /games/search-online and /games/stats/ranking/search are declared BEFORE the /games/{game_id} route so they are not shadowed (confirmed by test_get_game_by_id passing).",
+    "search-online endpoint has correct User-Agent header (fixes the previous Wikipedia 403 issue).",
+    "Frontend NotFoundStep debounces the Wikipedia search 350ms — good UX."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4.py (new)",
+    "/app/test_reports/iteration_4.json (new)",
+    "/app/test_reports/pytest/iter4.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% (6/6 flow steps)"},
+  "seed_data_creation": "None. Reused existing DB seed. No test games were created (flow validated only up to 'Estado 1/4' step and reset).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug fix verified. FAB testID is 'add-game-fab' (not 'fab-add'). Web preview cannot use expo-camera, so scan-manual-input / scan-manual-submit is the entry point for barcode testing. Wikipedia may occasionally return 0 results (rate limit) — retry once. Base URL: EXPO_PUBLIC_BACKEND_URL from /app/frontend/.env = https://game-library-hub-24.preview.emergentagent.com.",
+  "rca_of_issue": "Original bug: when the scanned barcode was unknown, /api/games/lookup-barcode returned {found:false} and the frontend jumped straight to the 'manual' step with empty fields — the user had no feedback that a scan even happened. Fix (verified working): (a) new backend GET /api/games/search-online?q=<title> queries Wikipedia REST API with a proper User-Agent header (Wikipedia was returning 403 without it), filters video-game-only results, guesses platform from keywords, returns [{title, platform, cover_url, description, source:'wikipedia'}]. (b) new frontend intermediate step 'notfound' (NotFoundStep component) shown when lookup returns not-found: displays the scanned EAN, has an autofocused search input that debounces Wikipedia lookups, renders results with cover/platform pill/description, plus 'Añadir manualmente' and 'Volver a escanear' buttons. Tapping a result pre-fills title/platform/cover and jumps to the confirm step."
+}

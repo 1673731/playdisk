@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 2 both-track testing completed. Added /app/backend/tests/test_iteration2.py with 13 new tests: barcode lookup (found/unknown), daily free limits (5 AI messages, 3 scans → 402 for non-premium; unlimited for premium), premium subscribe/cancel/reward-unlock (24h temp premium), stats total_spent (excludes gifts/wishlist), games create with new fields awarding 50 coins, settings shape. All 13/13 new backend tests pass; the pre-existing backend_test.py suite still passes when run alone (1 flake due to my autouse fixture racing against test_settings_get_and_update under xdist parallelism — not a product bug). Frontend end-to-end verified on mobile viewport (390x844): Home shows premium-badge='Free', coins-badge='G 0', total-games-card='12'; FAB opens add-game modal → method-scan fallback works (input '711719560838' → confirm 'God of War Ragnarök' → 'Sí, es este' → 'Estado 1/4'); manual flow completes box(bien)→manualCond(normal)→disc(excelente)→price(25€, gift-toggle activates gold border)→desc-no→animated Done → modal closes → home shows new game and coins jump to 50; Premium screen shows both plans (plan-monthly, plan-annual), subscribe-btn calls /api/premium/subscribe and premium-active-badge appears; after subscribe home badge switches to gold 'Premium'; reward-ad-btn grants 24h temp premium (premium_until in future, premium_active=true, is_premium=false).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iter2.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "MINOR (documentation only): review_request references testID='total-card' but the actual testID in /app/frontend/app/(tabs)/index.tsx:129 is 'total-games-card'. Either update code to 'total-card' or the spec — pick one to keep next testing aligned.",
+    "MINOR: review_request references testID='manual-title-input' but actual testID at /app/frontend/app/add-game.tsx:442 is 'manual-title'. Align spec or code.",
+    "NICE-TO-HAVE: the /api/games/lookup-barcode endpoint increments scans_today even when barcode is found. Consider whether counting successful lookups vs. all scans matters for the 3/day gate. Current behavior is: every call counts (unless premium). This matches the request.",
+    "NICE-TO-HAVE: /api/settings PUT does not allow resetting counters (ai_messages_today, scans_today) — testers had to touch MongoDB directly. Not blocking, just a note for future dev/test tooling."
+  ],
+  "critical_code_review_comments": [
+    "server.py is a single 507-line file; still under the 700-line threshold but growing — consider splitting routes into modules (games, premium, assistant, barcode) if it keeps growing.",
+    "server.py excludes MongoDB _id correctly via projections {'_id': 0} — good.",
+    "Frontend uses process.env.EXPO_PUBLIC_BACKEND_URL (via src/api.ts) — correct env usage.",
+    "add-game.tsx is 865 lines — approaching the 700-line guideline; consider extracting ConditionGrid, ScanFallback and PriceStep into separate components.",
+    "Backend correctly awards 50 coins on POST /api/games (verified). Daily counters properly reset via reset_daily_if_needed on any authenticated endpoint that gates.",
+    "is_premium_active() correctly considers both is_premium flag AND future premium_until — reward-unlock flow works as designed."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration2.py (new)"
+  ],
+  "success_rate": {"backend": "100% (13/13 new + 9/10 previous when run in parallel, 10/10 when run alone)", "frontend": "100% (all requested flows verified)"},
+  "seed_data_creation": "No new persistent seed data. Test games created during testing were cleaned up via DELETE /api/games/{id}. Settings state is reset by autouse fixture in test_iteration2.py.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend base URL comes from EXPO_PUBLIC_BACKEND_URL (frontend/.env), not EXPO_BACKEND_URL. Tests directly write to Mongo (localhost:27017/test_database) to simulate daily-limit state without spending LLM calls. Actual testIDs on Home: 'total-games-card' (not 'total-card'). Actual title input testID in add-game modal: 'manual-title' (not 'manual-title-input'). Premium screen state hydrates from /api/settings on mount; home badge updates on focus (may need reload if opened from deep-link). Reward-unlock returns premium_until ISO string and settings.premium_active=true even when is_premium=false — this is intended.",
+  "rca_of_issue": "No product bugs found. Single pytest failure (test_settings_get_and_update) only occurs when running full suite with xdist because the autouse _reset_state fixture in test_iteration2.py resets shake_to_search=True mid-test on another worker. Fix (test-only): mark iteration2 fixture with @pytest.mark.serial or run with -p no:xdist. Not a product defect."
+}
