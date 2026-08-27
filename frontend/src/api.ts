@@ -44,7 +44,17 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type BarcodeMatch = { barcode: string; title: string; platform: string; cover_url?: string; version?: string };
 export type BarcodeLookupRes = { found: boolean; game?: BarcodeMatch; suggestions?: BarcodeMatch[] };
-export type OnlineGame = { title: string; platform?: string | null; platform_name?: string | null; cover_url?: string | null; description?: string | null; source: string };
+export type OnlineGame = {
+  title: string;
+  platform?: string | null;
+  platform_name?: string | null;
+  console_icon?: string | null;
+  console_color?: string | null;
+  console_badge?: string | null;
+  cover_url?: string | null;
+  description?: string | null;
+  source: string;
+};
 
 export const api = {
   listPlatforms: () => req<Platform[]>('/platforms'),
@@ -111,7 +121,7 @@ export const api = {
       body: JSON.stringify({ session_id, message }),
     }),
 
-  searchOnline: (q: string, limit = 6) => {
+  searchOnline: (q: string, limit = 20) => {
     const p = new URLSearchParams({ q, limit: String(limit) });
     return req<OnlineGame[]>(`/games/search-online?${p.toString()}`);
   },

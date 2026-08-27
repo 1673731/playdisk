@@ -553,10 +553,9 @@ function NotFoundStep({
         {!loading && results.length > 0 && (
           <View style={{ gap: 8 }}>
             {results.map((r, idx) => {
-              const pf = platforms.find((p) => p.slug === r.platform);
               return (
                 <Pressable
-                  key={`${r.title}-${idx}`}
+                  key={`${r.title}-${r.platform_name}-${idx}`}
                   testID={`notfound-result-${idx}`}
                   onPress={() => { Haptics.selectionAsync().catch(() => {}); onPick(r); }}
                   style={styles.resultRow}
@@ -571,12 +570,21 @@ function NotFoundStep({
                   <View style={{ flex: 1 }}>
                     <Text style={styles.resultTitle} numberOfLines={1}>{r.title}</Text>
                     <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 2 }}>
-                      {pf && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                          <MaterialCommunityIcons name={pf.icon as any} size={12} color={pf.color} />
-                          <Text style={{ color: pf.color, fontSize: 11, fontWeight: '700' }}>{pf.name}</Text>
-                        </View>
-                      )}
+                      <View style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 4,
+                        backgroundColor: `${r.console_color || theme.colors.muted}22`,
+                        borderWidth: 1, borderColor: `${r.console_color || theme.colors.muted}55`,
+                        paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999,
+                      }}>
+                        <MaterialCommunityIcons
+                          name={(r.console_icon as any) || 'gamepad-variant'}
+                          size={12}
+                          color={r.console_color || theme.colors.muted}
+                        />
+                        <Text style={{ color: r.console_color || theme.colors.muted, fontSize: 10, fontWeight: '800' }}>
+                          {r.console_badge || r.platform_name}
+                        </Text>
+                      </View>
                       {r.description ? (
                         <Text style={{ color: theme.colors.muted, fontSize: 11 }} numberOfLines={1}>
                           {r.description}
@@ -745,23 +753,25 @@ function ManualStep({
             <View style={{ flex: 1 }}>
               <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>{r.title}</Text>
               
-              {/* AQUÍ ESTÁ EL CAMBIO: Logo y texto alineados en horizontal */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                <MaterialCommunityIcons 
-                  name={
-                    r.platform === 'playstation' ? 'sony-playstation' : 
-                    r.platform === 'nintendo' ? 'nintendo-switch' : 
-                    r.platform === 'xbox' ? 'microsoft-xbox' : 'gamepad-variant'
-                  } 
-                  size={18} 
-                  color={
-                    r.platform === 'playstation' ? '#0070D1' : 
-                    r.platform === 'nintendo' ? '#E60012' : 
-                    r.platform === 'xbox' ? '#107C10' : '#888'
-                  } 
-                />
-                <Text style={{ color: '#aaa', marginLeft: 6, fontSize: 13 }} numberOfLines={1}>
-                  {r.platform_name || r.platform}
+              {/* Icono + siglas (identidad visual única por consola) + nombre completo */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 6 }}>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 4,
+                  backgroundColor: `${r.console_color || '#888'}22`,
+                  borderWidth: 1, borderColor: `${r.console_color || '#888'}55`,
+                  paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999,
+                }}>
+                  <MaterialCommunityIcons
+                    name={(r.console_icon as any) || 'gamepad-variant'}
+                    size={13}
+                    color={r.console_color || '#888'}
+                  />
+                  <Text style={{ color: r.console_color || '#888', fontSize: 10, fontWeight: '800' }}>
+                    {r.console_badge || r.platform_name || r.platform}
+                  </Text>
+                </View>
+                <Text style={{ color: '#aaa', fontSize: 12, flexShrink: 1 }} numberOfLines={1}>
+                  {r.platform_name}
                 </Text>
               </View>
               

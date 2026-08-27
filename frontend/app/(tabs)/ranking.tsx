@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -17,12 +17,20 @@ const ROW_HEIGHT = 70;
 const ROW_GAP = 10;
 const SLOT_HEIGHT = ROW_HEIGHT + ROW_GAP;
 
+// Muelle suave y "profesional": poco rebote, movimiento fluido.
+const SPRING_CONFIG = { damping: 22, stiffness: 260, mass: 0.9 };
+const SIBLING_TRANSITION = LinearTransition.springify().damping(24).stiffness(220);
+
 export default function Ranking() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [games, setGames] = useState<Game[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [loading, setLoading] = useState(true);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const gamesRef = useRef<Game[]>([]);
+
+  useEffect(() => { gamesRef.current = games; }, [games]);
 
   const load = useCallback(async () => {
     try {
@@ -39,18 +47,22 @@ export default function Ranking() {
   useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Reordenar localmente (optimista) y persistir en el backend en segundo
-  // plano. Si falla, no revertimos: es un ranking personal, no crítico, y el
-  // siguiente "load()" al volver a esta pantalla corregirá cualquier
-  // discrepancia si algo fue mal.
-  const handleReorder = useCallback((fromIndex: number, toIndex: number) => {
+  // Reordena el array EN VIVO mientras se arrastra (no espera a soltar), para
+  // que los demás juegos se desplacen de verdad al pasar por encima, como un
+  // hueco que se abre. No llama al backend en cada paso: eso se hace una
+  // sola vez al soltar (handlePersist), para no saturar de peticiones.
+  const handleLiveReorder = useCallback((fromIndex: number, toIndex: number) => {
     setGames((prev) => {
+      if (fromIndex < 0 || fromIndex >= prev.length) return prev;
       const next = [...prev];
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
-      api.reorderRanking(next.map((g) => g.id)).catch((e) => console.warn('No se pudo guardar el orden', e));
       return next;
     });
+  }, []);
+
+  const handlePersist = useCallback(() => {
+    api.reorderRanking(gamesRef.current.map((g) => g.id)).catch((e) => console.warn('No se pudo guardar el orden', e));
   }, []);
 
   return (
@@ -70,7 +82,7 @@ export default function Ranking() {
           </Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 140 }}>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 140 }} scrollEnabled={!draggingId}>
           {games.map((item, index) => {
             const pf = platforms.find((p) => p.slug === item.platform);
             return (
@@ -80,7 +92,11 @@ export default function Ranking() {
                 index={index}
                 total={games.length}
                 pf={pf}
-                onReorder={handleReorder}
+                isDragging={draggingId === item.id}
+                onDragStart={() => setDraggingId(item.id)}
+                onDragEnd={() => setDraggingId(null)}
+                onLiveReorder={handleLiveReorder}
+                onPersist={handlePersist}
                 onPress={() => { Haptics.selectionAsync().catch(() => {}); router.push(`/game/${item.id}` as any); }}
               />
             );
@@ -92,63 +108,82 @@ export default function Ranking() {
 }
 
 function RankRow({
-  item, index, total, pf, onReorder, onPress,
+  item, index, total, pf, isDragging, onDragStart, onDragEnd, onLiveReorder, onPersist, onPress,
 }: {
   item: Game;
   index: number;
   total: number;
   pf: Platform | undefined;
-  onReorder: (from: number, to: number) => void;
+  isDragging: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onLiveReorder: (from: number, to: number) => void;
+  onPersist: () => void;
   onPress: () => void;
 }) {
   const translateY = useSharedValue(0);
   const dragging = useSharedValue(false);
-  const startIndexRef = React.useRef(index);
-
-  // El índice puede cambiar entre renders (al reordenar); lo mantenemos
-  // accesible dentro del gesto sin recrear el gesture en cada render.
-  const indexRef = React.useRef(index);
-  indexRef.current = index;
-  const totalRef = React.useRef(total);
-  totalRef.current = total;
-
-  const commitMove = (toIndex: number) => {
-    const from = startIndexRef.current;
-    const clamped = Math.max(0, Math.min(totalRef.current - 1, toIndex));
-    if (clamped !== from) onReorder(from, clamped);
-  };
+  // Todo lo que hay que leer/escribir DENTRO del gesto (hilo de UI) debe ser
+  // un shared value, nunca una ref normal de React ni el prop 'index' leído
+  // a mitad de gesto (ver bug anterior: una ref no es fiable cruzando hilos).
+  const startIndex = useSharedValue(index);
+  const lastReportedIndex = useSharedValue(index);
 
   const pan = Gesture.Pan()
     .onStart(() => {
-      startIndexRef.current = indexRef.current;
+      startIndex.value = index; // valor de la última renderización: correcto, porque el gesto se recrea en cada render
+      lastReportedIndex.value = index;
       dragging.value = true;
+      runOnJS(onDragStart)();
     })
     .onUpdate((e) => {
-      translateY.value = e.translationY;
+      // 'consumedSlots' = cuántas plazas ya hemos "gastado" reordenando el
+      // array en vivo. Restamos ese desplazamiento para que el dedo y la
+      // tarjeta sigan coincidiendo exactamente, en vez de sumarse el
+      // desplazamiento del reordenamiento Y el del dedo (que haría que la
+      // tarjeta saltara de más).
+      const consumedSlots = lastReportedIndex.value - startIndex.value;
+      translateY.value = e.translationY - consumedSlots * SLOT_HEIGHT;
+
+      const rawTarget = startIndex.value + Math.round(e.translationY / SLOT_HEIGHT);
+      const clamped = Math.max(0, Math.min(total - 1, rawTarget));
+      if (clamped !== lastReportedIndex.value) {
+        const from = lastReportedIndex.value;
+        lastReportedIndex.value = clamped;
+        runOnJS(onLiveReorder)(from, clamped);
+        // Recalculamos ya mismo con el nuevo desplazamiento consumido para
+        // que no haya un salto visual de un frame antes de la siguiente
+        // actualización del gesto.
+        translateY.value = e.translationY - (clamped - startIndex.value) * SLOT_HEIGHT;
+      }
     })
-    .onEnd((e) => {
-      const move = Math.round(e.translationY / SLOT_HEIGHT);
-      translateY.value = withSpring(0, { damping: 18 });
+    .onEnd(() => {
+      translateY.value = withSpring(0, SPRING_CONFIG);
       dragging.value = false;
-      runOnJS(commitMove)(startIndexRef.current + move);
+      runOnJS(onDragEnd)();
+      runOnJS(onPersist)();
     })
     .onFinalize(() => {
       dragging.value = false;
-      translateY.value = withSpring(0, { damping: 18 });
+      translateY.value = withSpring(0, SPRING_CONFIG);
+      runOnJS(onDragEnd)();
     });
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }, { scale: withSpring(dragging.value ? 1.02 : 1) }],
+    transform: [
+      { translateY: translateY.value },
+      { scale: withSpring(dragging.value ? 1.035 : 1, SPRING_CONFIG) },
+    ],
     zIndex: dragging.value ? 100 : 0,
-    shadowOpacity: dragging.value ? 0.35 : 0,
-    elevation: dragging.value ? 8 : 0,
+    shadowOpacity: withSpring(dragging.value ? 0.4 : 0, SPRING_CONFIG),
+    elevation: dragging.value ? 10 : 0,
   }));
 
   const isFirst = index === 0;
 
   return (
     <Animated.View
-      layout={LinearTransition.duration(220)}
+      layout={isDragging ? undefined : SIBLING_TRANSITION}
       style={[
         styles.row,
         animatedStyle,
@@ -198,7 +233,7 @@ const styles = StyleSheet.create({
     height: ROW_HEIGHT, marginBottom: ROW_GAP, paddingHorizontal: 10,
     backgroundColor: 'rgba(13,17,38,0.6)', borderRadius: 16,
     borderWidth: 1, borderColor: theme.colors.border,
-    shadowColor: '#000', shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#000', shadowRadius: 12, shadowOffset: { width: 0, height: 6 },
   },
   rowFirst: {
     borderColor: 'rgba(251,191,36,0.5)',

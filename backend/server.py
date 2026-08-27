@@ -338,6 +338,137 @@ async def get_igdb_data(title: str):
         logger.warning("Error consultando IGDB: %s", e)
     return None
 
+# Cuando IGDB devuelve varias plataformas para un mismo juego (reediciones,
+# remasters, colecciones...), antes cogíamos las 2 primeras del array tal
+# cual las devolvía IGDB, sin ningún orden de relevancia. Esto mezclaba
+# sistemas históricos oscuros (Famicom Disk System, Satellaview...) con
+# otros modernos, y el icono acababa sin relación real con el texto. Ahora
+# elegimos UNA sola plataforma, priorizando la más moderna/reconocible.
+PLATFORM_DISPLAY_PRIORITY = [
+    "nintendo switch 2", "nintendo switch", "playstation 5", "playstation 4",
+    "xbox series", "xbox one", "pc (microsoft windows)", "playstation 3",
+    "xbox 360", "wii u", "nintendo 3ds", "playstation vita", "wii",
+    "playstation 2", "playstation", "psp", "gamecube", "nintendo 64",
+    "game boy advance", "game boy color", "game boy", "super nintendo",
+    "nes", "sega genesis", "sega saturn", "dreamcast", "atari",
+]
+
+def pick_best_platform_name(platform_names: list) -> str:
+    """Elige una única plataforma representativa entre todas las que trae
+    el juego, según PLATFORM_DISPLAY_PRIORITY. Si ninguna coincide con la
+    lista de prioridad, se queda con la primera que haya."""
+    if not platform_names:
+        return "Desconocido"
+    lowered = [p.lower() for p in platform_names]
+    for wanted in PLATFORM_DISPLAY_PRIORITY:
+        for i, p in enumerate(lowered):
+            if wanted in p:
+                return platform_names[i]
+    return platform_names[0]
+
+# Icono y color específicos por consola concreta (no solo por fabricante),
+# para que al buscar salga una tarjeta por cada versión/plataforma con su
+# logo correcto, en vez de mezclarlas todas en una. Los iconos disponibles
+# en MaterialCommunityIcons son limitados para consolas retro, así que
+# usamos el más parecido disponible + un color propio para diferenciarlas
+# visualmente aunque compartan icono genérico.
+CONSOLE_ICON_RULES = [
+    # (patrón en el nombre de la plataforma, icono, color, slug de familia, siglas)
+    # Las "siglas" son la forma de dar identidad única a cada consola sin
+    # reproducir su logotipo oficial (que es marca registrada de cada
+    # fabricante): icono + color + siglas cortas, mostradas como una
+    # pequeña etiqueta junto al icono.
+
+    # --- Nintendo ---
+    (r"switch\s*2", "nintendo-switch", "#E60012", "nintendo", "SW2"),
+    (r"switch", "nintendo-switch", "#E60012", "nintendo", "SWITCH"),
+    (r"wii\s*u", "nintendo-wiiu", "#009AC7", "nintendo", "WII U"),
+    (r"\bwii\b", "nintendo-wii", "#8B8B8B", "nintendo", "WII"),
+    (r"game\s*boy\s*advance", "nintendo-game-boy", "#5A2D91", "nintendo", "GBA"),
+    (r"game\s*boy\s*color", "nintendo-game-boy", "#E60012", "nintendo", "GBC"),
+    (r"game\s*boy", "nintendo-game-boy", "#8B8B8B", "nintendo", "GB"),
+    (r"new\s*nintendo\s*3ds|n3ds", "gamepad-variant", "#D4213D", "nintendo", "N3DS"),
+    (r"\b3ds\b", "gamepad-variant", "#D4213D", "nintendo", "3DS"),
+    (r"\b2ds\b", "gamepad-variant", "#D4213D", "nintendo", "2DS"),
+    (r"nintendo\s*ds|(?<!x)\bds\b", "gamepad-variant", "#8B8B8B", "nintendo", "DS"),
+    (r"gamecube", "gamepad-variant", "#6A5ACD", "nintendo", "GC"),
+    (r"nintendo\s*64|\bn64\b", "gamepad-variant", "#007A33", "nintendo", "N64"),
+    (r"super\s*nintendo|\bsnes\b|super\s*famicom", "gamepad-variant", "#8E44AD", "nintendo", "SNES"),
+    (r"famicom\s*disk", "floppy-variant", "#C0392B", "nintendo", "FDS"),
+    (r"famicom|\bnes\b", "gamepad-variant", "#C0392B", "nintendo", "NES"),
+    (r"satellaview", "gamepad-variant", "#7F8C8D", "nintendo", "BS-X"),
+    (r"virtual\s*boy", "gamepad-variant", "#8B0000", "nintendo", "VB"),
+    (r"pokemon\s*mini|pok[eé]mon\s*mini", "gamepad-variant", "#FFCB05", "nintendo", "P-MINI"),
+
+    # --- PlayStation ---
+    (r"playstation\s*5|\bps5\b", "sony-playstation", "#0070D1", "playstation", "PS5"),
+    (r"playstation\s*4|\bps4\b", "sony-playstation", "#0070D1", "playstation", "PS4"),
+    (r"playstation\s*3|\bps3\b", "sony-playstation", "#003791", "playstation", "PS3"),
+    (r"playstation\s*2|\bps2\b", "sony-playstation", "#003791", "playstation", "PS2"),
+    (r"ps\s*vita|psvita", "sony-playstation", "#0070D1", "playstation", "VITA"),
+    (r"\bpsp\b", "sony-playstation", "#0070D1", "playstation", "PSP"),
+    (r"playstation(?!\s*[2345])", "sony-playstation", "#003791", "playstation", "PS1"),
+
+    # --- Xbox ---
+    (r"xbox\s*series\s*x", "microsoft-xbox", "#107C10", "xbox", "SERIES X"),
+    (r"xbox\s*series\s*s", "microsoft-xbox", "#107C10", "xbox", "SERIES S"),
+    (r"xbox\s*series", "microsoft-xbox", "#107C10", "xbox", "SERIES"),
+    (r"xbox\s*one", "microsoft-xbox", "#107C10", "xbox", "ONE"),
+    (r"xbox\s*360", "microsoft-xbox", "#107C10", "xbox", "360"),
+    (r"\bxbox\b", "microsoft-xbox", "#107C10", "xbox", "XBOX"),
+
+    # --- Sega ---
+    (r"dreamcast", "controller-classic", "#FF6600", "sega", "DC"),
+    (r"sega\s*saturn|\bsaturn\b", "controller-classic", "#00529B", "sega", "SATURN"),
+    (r"mega\s*drive|megadrive|sega\s*genesis|\bgenesis\b", "controller-classic", "#0055A4", "sega", "GENESIS"),
+    (r"game\s*gear", "controller-classic", "#0055A4", "sega", "GG"),
+    (r"master\s*system", "controller-classic", "#0055A4", "sega", "SMS"),
+    (r"sega\s*32x|\b32x\b", "controller-classic", "#0055A4", "sega", "32X"),
+    (r"sega\s*cd|mega\s*cd", "controller-classic", "#0055A4", "sega", "MEGA CD"),
+    (r"sg-?1000", "controller-classic", "#0055A4", "sega", "SG-1000"),
+
+    # --- Atari ---
+    (r"atari\s*2600", "gamepad-variant", "#E41E2B", "atari", "2600"),
+    (r"atari\s*5200", "gamepad-variant", "#E41E2B", "atari", "5200"),
+    (r"atari\s*7800", "gamepad-variant", "#E41E2B", "atari", "7800"),
+    (r"atari\s*jaguar|jaguar", "gamepad-variant", "#E41E2B", "atari", "JAGUAR"),
+    (r"atari\s*lynx|lynx", "gamepad-variant", "#E41E2B", "atari", "LYNX"),
+    (r"atari\s*st", "desktop-classic", "#E41E2B", "atari", "ATARI ST"),
+    (r"atari", "gamepad-variant", "#E41E2B", "atari", "ATARI"),
+
+    # --- PC / Steam ---
+    (r"\bsteam\b", "steam", "#66C0F4", "steam", "STEAM"),
+    (r"pc\s*\(microsoft windows\)|\bwindows\b|\bpc\b|linux|\bmac\b", "desktop-classic", "#8B5CF6", "pc", "PC"),
+
+    # --- Otras marcas menos comunes pero que existen en IGDB ---
+    (r"3do", "gamepad-variant", "#4A90D9", "otros", "3DO"),
+    (r"neo\s*geo\s*pocket", "gamepad-variant", "#000000", "otros", "NGP"),
+    (r"neo\s*geo", "gamepad-variant", "#000000", "otros", "NEO GEO"),
+    (r"turbografx|pc\s*engine", "gamepad-variant", "#F5A623", "otros", "TG-16"),
+    (r"wonderswan", "gamepad-variant", "#5A5A5A", "otros", "WSWAN"),
+    (r"commodore\s*64|\bc64\b", "desktop-classic", "#5C4C9F", "otros", "C64"),
+    (r"amiga", "desktop-classic", "#5C4C9F", "otros", "AMIGA"),
+    (r"msx", "desktop-classic", "#B71C1C", "otros", "MSX"),
+    (r"colecovision", "gamepad-variant", "#D32F2F", "otros", "COLECO"),
+    (r"intellivision", "gamepad-variant", "#8B4513", "otros", "INTV"),
+    (r"ouya", "gamepad-variant", "#666666", "otros", "OUYA"),
+    (r"android", "cellphone", "#3DDC84", "otros", "ANDROID"),
+    (r"\bios\b|iphone|ipad", "cellphone", "#999999", "otros", "IOS"),
+]
+
+def console_icon_for(platform_name: str):
+    """Devuelve (icon, color, family_slug, badge) para una plataforma
+    concreta. El 'badge' son las siglas cortas de la consola exacta,
+    para darle identidad única sin reproducir el logotipo oficial de la
+    marca (que es marca registrada de cada fabricante)."""
+    t = (platform_name or "").lower()
+    for pattern, icon, color, family, badge in CONSOLE_ICON_RULES:
+        if re.search(pattern, t):
+            return icon, color, family, badge
+    fam = guess_platform_from_text(platform_name) or "playstation"
+    fallback_badge = (platform_name or "?").strip()[:8].upper() or "?"
+    return "gamepad-variant", "#888888", fam, fallback_badge
+
 # ---------- Barcode & Consoles Cleaner ----------
 GAME_KEYWORDS = ["video game", "videojuego", "playstation", "xbox", "nintendo", "switch", "ps4", "ps5", "ps3", "ps2", "psp", "vita", "gameboy", "steam", "sega", "genesis", "megadrive", "wii", "3ds", "atari", "gamecube"]
 
@@ -692,23 +823,37 @@ async def search_online(q: str = "", limit: int = 15):
                 if "cover" in game_data and "url" in game_data["cover"]:
                     cover_url = "https:" + game_data["cover"]["url"].replace("t_thumb", "t_cover_big")
                 
-                # Cogemos el nombre exacto de la consola oficial (hasta 2 para no saturar)
-                plat_name = "Desconocido"
-                if "platforms" in game_data and len(game_data["platforms"]) > 0:
-                    names = [p.get("name", "") for p in game_data["platforms"][:2]]
-                    plat_name = " / ".join(names)
-                
-                platform_slug = guess_platform_from_text(plat_name) or "playstation"
-                
-                results.append({
-                    "title": game_data.get("name"),
-                    "platform": platform_slug,
-                    "platform_name": plat_name, # <-- Pasamos el nombre exacto al móvil
-                    "cover_url": cover_url,
-                    "description": "Encontrado en IGDB",
-                    "source": "igdb",
-                })
-            return results
+                # Una tarjeta de resultado POR CADA plataforma real en la
+                # que existe el juego (no una sola mezclando todas), para
+                # que el icono y el nombre de consola sean siempre exactos.
+                platform_entries = game_data.get("platforms") or []
+                platform_names = [p.get("name", "") for p in platform_entries if p.get("name")]
+                if not platform_names:
+                    platform_names = ["Desconocido"]
+
+                seen_family = set()
+                for plat_name in platform_names:
+                    icon, color, family_slug, badge = console_icon_for(plat_name)
+                    # Evitamos duplicar tarjetas si dos nombres de plataforma
+                    # distintos caen en la misma familia de icono (p.ej. dos
+                    # variantes regionales de la misma consola).
+                    dedupe_key = (family_slug, plat_name.lower())
+                    if dedupe_key in seen_family:
+                        continue
+                    seen_family.add(dedupe_key)
+
+                    results.append({
+                        "title": game_data.get("name"),
+                        "platform": family_slug,
+                        "platform_name": plat_name,
+                        "console_icon": icon,
+                        "console_color": color,
+                        "console_badge": badge,
+                        "cover_url": cover_url,
+                        "description": "Encontrado en IGDB",
+                        "source": "igdb",
+                    })
+            return results[:40]
     except Exception as e:
         logger.warning("Error en IGDB search manual: %s", e)
         return []
