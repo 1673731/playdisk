@@ -99,7 +99,7 @@ export default function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         </View>
       ) : (
         <View style={styles.tabsRow}>
-          {state.routes.map((route, idx) => {
+          {state.routes.map((route: typeof state.routes[number], idx: number) => {
             const meta = TAB_META[route.name];
             if (!meta) return null;
             const focused = state.index === idx;

@@ -24,7 +24,11 @@
       "edgeToEdgeEnabled": true,
       "package": "com.emergent.gamelibraryhub.fgc3ml",
       "versionCode": 1,
-      "permissions": ["CAMERA"]
+      "permissions": [
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -51,6 +55,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7e58f226-4d56-41c0-8074-e53b719b2a26"
+      }
     }
   }
 }

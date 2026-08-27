@@ -26,29 +26,54 @@ export default function Home() {
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const requestIdRef = React.useRef(0);
 
-  const load = useCallback(async () => {
+  // Plataformas y ajustes no dependen del filtro seleccionado: se cargan una
+  // sola vez (y en focus/refresh), no en cada cambio de chip de plataforma.
+  const loadStatic = useCallback(async () => {
     try {
-      const [pfs, gs, st, s] = await Promise.all([
-        api.listPlatforms(),
-        api.listGames(selectedPlatform ?? undefined, 12),
-        api.stats(selectedPlatform ?? undefined),
-        api.getSettings(),
-      ]);
+      const [pfs, s] = await Promise.all([api.listPlatforms(), api.getSettings()]);
       setPlatforms(pfs);
-      setGames(gs);
-      setTotal(st.total);
       setSettings(s);
     } catch (e) {
-      console.warn('Home load error', e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      console.warn('Home static load error', e);
     }
-  }, [selectedPlatform]);
+  }, []);
 
-  useEffect(() => { setLoading(true); load(); }, [load]);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  // Solo esto depende de la plataforma seleccionada. Se protege con un id de
+  // petición para ignorar respuestas que lleguen desordenadas si el usuario
+  // cambia de plataforma varias veces seguidas muy rápido.
+  const loadGamesFor = useCallback(async (platformSlug: string | null) => {
+    const myRequestId = ++requestIdRef.current;
+    try {
+      const [gs, st] = await Promise.all([
+        api.listGames(platformSlug ?? undefined, 12),
+        api.stats(platformSlug ?? undefined),
+      ]);
+      if (myRequestId !== requestIdRef.current) return; // respuesta obsoleta, ignorar
+      setGames(gs);
+      setTotal(st.total);
+    } catch (e) {
+      if (myRequestId !== requestIdRef.current) return;
+      console.warn('Home games load error', e);
+    } finally {
+      if (myRequestId === requestIdRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => { setLoading(true); loadGamesFor(selectedPlatform); }, [selectedPlatform, loadGamesFor]);
+  useEffect(() => { loadStatic(); }, [loadStatic]);
+  useFocusEffect(useCallback(() => { loadStatic(); loadGamesFor(selectedPlatform); }, [loadStatic, loadGamesFor, selectedPlatform]));
+
+  const load = useCallback(() => {
+    setRefreshing(true);
+    loadStatic();
+    loadGamesFor(selectedPlatform);
+  }, [loadStatic, loadGamesFor, selectedPlatform]);
+
 
   const currentPlatform = platforms.find((p) => p.slug === selectedPlatform);
   const isPremium = !!settings?.premium_active;

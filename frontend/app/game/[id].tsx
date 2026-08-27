@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { api } from '@/src/api';
+import { CameraCaptureScreen } from '@/src/CameraCapture';
 
 type ConditionKey = 'mint' | 'good' | 'bad' | 'missing';
 const CONDITION_KEYS: ConditionKey[] = ['mint', 'good', 'bad', 'missing'];
@@ -27,6 +28,7 @@ export default function GameDetail() {
   const [man, setMan] = useState<ConditionKey | null>(null);
   const [disc, setDisc] = useState<ConditionKey | null>(null);
   const [notes, setNotes] = useState('');
+  const [showCamera, setShowCamera] = useState(false);
 
   // 1. Cargamos el juego
   useEffect(() => {
@@ -46,6 +48,22 @@ export default function GameDetail() {
         setLoading(false);
       });
   }, [id]);
+
+  // 2b. Guardar una foto personal de portada (nunca se comparte con el
+  // catálogo de códigos de barras: es solo para esta entrada tuya).
+  const savePersonalPhoto = async (localUri: string) => {
+    setShowCamera(false);
+    setSaving(true);
+    try {
+      await api.updateGame(id as string, { cover_url: localUri } as any);
+      setGame((g: any) => ({ ...g, cover_url: localUri }));
+    } catch (e) {
+      console.warn(e);
+      Alert.alert('Error', 'No se pudo guardar la foto.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // 2. Guardar cambios en las notas o estado
   const saveChanges = async () => {
@@ -106,6 +124,15 @@ export default function GameDetail() {
     );
   }
 
+  if (showCamera) {
+    return (
+      <CameraCaptureScreen
+        onCaptured={savePersonalPhoto}
+        onCancel={() => setShowCamera(false)}
+      />
+    );
+  }
+
   // 4. Parche de la fecha para evitar crasheos
   const added = (game.added_at && !isNaN(new Date(game.added_at).getTime())) 
     ? formatDistanceToNow(new Date(game.added_at), { locale: es, addSuffix: true }) 
@@ -119,9 +146,14 @@ export default function GameDetail() {
         {game.cover_url ? (
           <Image source={{ uri: game.cover_url }} style={styles.cover} />
         ) : (
-          <View style={[styles.cover, { backgroundColor: '#444', justifyContent: 'center', alignItems: 'center' }]}>
-            <MaterialCommunityIcons name="gamepad-variant" size={40} color="#666" />
-          </View>
+          <Pressable
+            testID="detail-take-photo"
+            onPress={() => setShowCamera(true)}
+            style={[styles.cover, { backgroundColor: '#444', justifyContent: 'center', alignItems: 'center', gap: 6 }]}
+          >
+            <MaterialCommunityIcons name="camera-plus-outline" size={32} color="#999" />
+            <Text style={{ color: '#999', fontSize: 10, textAlign: 'center', paddingHorizontal: 4 }}>Añadir foto</Text>
+          </Pressable>
         )}
         <View style={styles.headerInfo}>
           <Text style={styles.title}>{game.title}</Text>

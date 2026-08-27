@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, Pressable, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,11 +28,25 @@ export default function Wishlist() {
   useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const moveToCollection = async (g: Game) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    await api.updateGame(g.id, { in_wishlist: false });
-    load();
+  const moveToCollection = (g: Game) => {
+    Haptics.selectionAsync().catch(() => {});
+    Alert.alert(
+      `¿Ya tienes "${g.title}"?`,
+      'Se moverá de tu wishlist a tu colección. Podrás editar el estado de la caja, el disco y el precio después, desde la ficha del juego.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Sí, moverlo',
+          onPress: async () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+            await api.updateGame(g.id, { in_wishlist: false });
+            load();
+          },
+        },
+      ],
+    );
   };
+
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.surface, paddingTop: insets.top + 8 }}>

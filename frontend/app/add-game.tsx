@@ -7,26 +7,31 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import { theme, CONDITION_META, type ConditionKey, type Platform as Pf } from '@/src/theme';
 import { api, type BarcodeMatch, type OnlineGame } from '@/src/api';
-type Step = 'method' | 'scan' | 'confirm' | 'notfound' | 'manual' | 'box' | 'manualCond' | 'disc' | 'price' | 'desc' | 'done';
+import { CameraCaptureScreen } from '@/src/CameraCapture';
+type Step = 'method' | 'scan' | 'confirm' | 'notfound' | 'manual' | 'box' | 'manualCond' | 'disc' | 'price' | 'desc' | 'done' | 'photo';
 
 const CONDITION_KEYS: ConditionKey[] = ['excelente', 'bien', 'normal', 'mal', 'horrible', 'sin'];
     
 export default function AddGame() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ method?: string; q?: string }>();
+  const initialQuery = typeof params.q === 'string' ? params.q : '';
 
-  const [step, setStep] = useState<Step>('method');
+  const [step, setStep] = useState<Step>(params.method === 'manual' ? 'manual' : 'method');
   const [platforms, setPlatforms] = useState<Pf[]>([]);
 
   // Draft
   const [title, setTitle] = useState('');
   const [platform, setPlatform] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [coverIsPersonal, setCoverIsPersonal] = useState(false);
+  const [photoReturnStep, setPhotoReturnStep] = useState<Step>('manual');
   const [version, setVersion] = useState<string | null>(null);
   const [barcode, setBarcode] = useState<string | null>(null);
 
@@ -68,12 +73,19 @@ export default function AddGame() {
       // se está guardando ahora sí corresponden de verdad a ese código: lo
       // dejamos grabado de forma fiable en el catálogo local. Es un "best
       // effort": si falla, no bloqueamos el guardado del juego en sí.
+      //
+      // IMPORTANTE (privacidad): si la portada es una foto que el usuario se
+      // hizo con su cámara (coverIsPersonal), NUNCA se manda al catálogo
+      // compartido de códigos de barras. Ese catálogo lo usan también otras
+      // personas que escaneen el mismo código, y una foto casera no debe
+      // acabar mostrándose a terceros. Solo se comparten portadas que vienen
+      // de una fuente oficial (IGDB / búsqueda online).
       if (barcode) {
         api.confirmBarcode({
           barcode,
           title: title.trim(),
           platform: platform as string,
-          cover_url: coverUrl || undefined,
+          cover_url: coverIsPersonal ? undefined : (coverUrl || undefined),
           version: version || undefined,
         }).catch((e) => console.warn('No se pudo confirmar el barcode:', e));
       }
@@ -126,6 +138,7 @@ export default function AddGame() {
           else if (step === 'disc') setStep('manualCond');
           else if (step === 'price') setStep('disc');
           else if (step === 'desc') setStep('price');
+          else if (step === 'photo') setStep(photoReturnStep);
         }}
         style={styles.iconBtn}
       >
@@ -219,6 +232,7 @@ export default function AddGame() {
             setBarcode(null);
             setStep('manual');
           }}
+          onTakePhoto={() => { setPhotoReturnStep('confirm'); setStep('photo'); }}
         />
       )}
 
@@ -228,8 +242,11 @@ export default function AddGame() {
           platform={platform} setPlatform={setPlatform}
           coverUrl={coverUrl} setCoverUrl={setCoverUrl}
           setVersion={setVersion}
+          coverIsPersonal={coverIsPersonal} setCoverIsPersonal={setCoverIsPersonal}
+          onTakePhoto={() => { setPhotoReturnStep('manual'); setStep('photo'); }}
+          initialQuery={initialQuery}
           onSave={() => setStep('confirm')}
-          onCancel={() => setStep('method')}
+          onCancel={() => (initialQuery ? router.back() : setStep('method'))}
         />
       )}
 
@@ -304,6 +321,17 @@ export default function AddGame() {
           saving={saving}
           onSkip={() => commitSave('')}
           onSave={() => commitSave(description)}
+        />
+      )}
+
+      {step === 'photo' && (
+        <CameraCaptureScreen
+          onCaptured={(uri) => {
+            setCoverUrl(uri);
+            setCoverIsPersonal(true);
+            setStep(photoReturnStep);
+          }}
+          onCancel={() => setStep(photoReturnStep)}
         />
       )}
 
@@ -583,7 +611,7 @@ function NotFoundStep({
 }
 
 function ConfirmStep({
-  title, platform, platforms, coverUrl, version, onYes, onNo,
+  title, platform, platforms, coverUrl, version, onYes, onNo, onTakePhoto,
 }: any) {
   const pf = platforms.find((p: Pf) => p.slug === platform);
   return (
@@ -595,6 +623,18 @@ function ConfirmStep({
           <MaterialCommunityIcons name="gamepad-variant" size={40} color={theme.colors.muted} />
         )}
       </View>
+      {!coverUrl && onTakePhoto && (
+        <Pressable
+          testID="confirm-take-photo"
+          onPress={onTakePhoto}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+        >
+          <MaterialCommunityIcons name="camera" size={16} color={theme.colors.brandPrimary} />
+          <Text style={{ color: theme.colors.brandPrimary, fontWeight: '600', fontSize: 13 }}>
+            Sin portada oficial — hazle una foto a tu copia
+          </Text>
+        </Pressable>
+      )}
       <Text style={styles.confirmQ}>¿Es este juego?</Text>
       <Text style={styles.confirmTitle}>{title}</Text>
       {pf && (
@@ -620,59 +660,82 @@ function ConfirmStep({
 }
 
 function ManualStep({
-  title, setTitle, platform, setPlatform, coverUrl, setCoverUrl, setVersion, onSave, onCancel
+  title, setTitle, platform, setPlatform, coverUrl, setCoverUrl, setVersion, onSave, onCancel,
+  coverIsPersonal, setCoverIsPersonal, onTakePhoto, initialQuery,
 }: any) {
-  const [query, setQuery] = React.useState(title || '');
+  const [query, setQuery] = React.useState(title || initialQuery || '');
   const [results, setResults] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const timerRef = React.useRef<any>(null);
 
-  const search = async () => {
-    if (!query.trim()) return;
+  const search = React.useCallback(async (text: string) => {
+    if (!text.trim() || text.trim().length < 2) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setError(null);
     try {
-      const data = await api.searchOnline(query);
+      const data = await api.searchOnline(text.trim());
       setResults(Array.isArray(data) ? data : []);
     } catch (e) {
       console.warn(e);
       setResults([]);
-      alert("Error al buscar el juego. Revisa tu conexión al servidor.");
+      setError('No se pudo buscar. Revisa tu conexión al servidor.');
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  React.useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => search(query), 350);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [query, search]);
+
+  const pickResult = (r: any) => {
+    setTitle(r.title);
+    setPlatform(r.platform);
+    setCoverUrl(r.cover_url || null);
+    setCoverIsPersonal?.(false);
+    setVersion(r.platform_name || null);
+    onSave();
   };
+
 
   return (
     <View style={{ flex: 1, padding: 16, marginTop: 40 }}>
       <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 12, color: '#fff' }}>Buscar Juego en IGDB</Text>
       
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+      <View style={{ marginBottom: 16 }}>
         <TextInput
-          style={{ flex: 1, backgroundColor: '#333', color: '#fff', padding: 12, borderRadius: 8 }}
+          style={{ backgroundColor: '#333', color: '#fff', padding: 12, borderRadius: 8 }}
           placeholder="Ej: Nioh..."
           placeholderTextColor="#888"
           value={query}
           onChangeText={setQuery}
-          onSubmitEditing={search}
+          autoFocus
+          autoCorrect={false}
         />
-        <Pressable onPress={search} style={{ backgroundColor: '#4338CA', justifyContent: 'center', paddingHorizontal: 16, borderRadius: 8 }}>
-          <Text style={{ color: '#fff', fontWeight: 'bold' }}>Buscar</Text>
-        </Pressable>
       </View>
 
       {loading && <ActivityIndicator color="#4338CA" size="large" style={{ marginTop: 20 }} />}
+      {!loading && error && (
+        <Text style={{ color: theme.colors.error, textAlign: 'center', marginTop: 12 }}>{error}</Text>
+      )}
+      {!loading && !error && query.trim().length >= 2 && results.length === 0 && (
+        <Text style={{ color: '#888', textAlign: 'center', marginTop: 12 }}>Sin resultados para "{query}".</Text>
+      )}
+
 
       <ScrollView style={{ flex: 1 }}>
         {results.map((r, i) => (
           <Pressable
             key={i}
             style={{ flexDirection: 'row', backgroundColor: '#222', padding: 12, borderRadius: 8, marginBottom: 8, alignItems: 'center' }}
-            onPress={() => {
-              setTitle(r.title);
-              setPlatform(r.platform);
-              setCoverUrl(r.cover_url);
-              setVersion(r.platform_name || null);
-              onSave(); // Al pulsar, avanza al paso de guardar
-            }}
+            onPress={() => pickResult(r)}
           >
             {r.cover_url ? (
               <Image source={{ uri: r.cover_url }} style={{ width: 50, height: 70, borderRadius: 4, marginRight: 12 }} />

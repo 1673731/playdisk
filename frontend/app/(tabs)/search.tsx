@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, Pressable } from 'react-native';
 import { Image } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 
 import { theme, type Game, type Platform } from '@/src/theme';
 import { api } from '@/src/api';
@@ -10,6 +11,7 @@ import { searchBus } from '@/src/CustomTabBar';
 
 export default function Search() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [q, setQ] = useState(searchBus.query);
   const [results, setResults] = useState<Game[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
@@ -38,7 +40,11 @@ export default function Search() {
   const renderItem = useCallback(({ item }: { item: Game }) => {
     const pf = platforms.find((p) => p.slug === item.platform);
     return (
-      <View style={styles.row} testID={`search-result-${item.id}`}>
+      <Pressable
+        onPress={() => router.push(`/game/${item.id}` as any)}
+        style={styles.row}
+        testID={`search-result-${item.id}`}
+      >
         {item.cover_url ? (
           <Image source={{ uri: item.cover_url }} style={styles.cover} contentFit="cover" />
         ) : (
@@ -61,16 +67,17 @@ export default function Search() {
             <Text style={styles.tagText}>Wishlist</Text>
           </View>
         )}
-      </View>
+        <MaterialCommunityIcons name="chevron-right" size={18} color={theme.colors.onSurfaceTertiary} />
+      </Pressable>
     );
-  }, [platforms]);
+  }, [platforms, router]);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.surface, paddingTop: insets.top + 12 }}>
       <View style={styles.header}>
         <Text style={styles.hTitle}>Buscador</Text>
         <Text style={styles.hSubtitle}>
-          {q ? `Buscando "${q}"` : 'Agita el móvil o escribe abajo para buscar'}
+          {q ? `Buscando en tu colección "${q}"` : 'Agita el móvil o escribe abajo para buscar en tu colección'}
         </Text>
       </View>
 
@@ -91,8 +98,19 @@ export default function Search() {
                 color={theme.colors.muted}
               />
               <Text style={{ color: theme.colors.muted, marginTop: 8, textAlign: 'center' }}>
-                {q ? `Sin resultados para "${q}"` : 'Empieza a escribir en la barra inferior'}
+                {q
+                  ? `No tienes ningún juego con "${q}" en tu colección o wishlist.`
+                  : 'Empieza a escribir en la barra inferior. Esto busca dentro de tu colección y wishlist, no juegos nuevos.'}
               </Text>
+              {q ? (
+                <Pressable
+                  style={styles.addBtn}
+                  onPress={() => router.push({ pathname: '/add-game', params: { method: 'manual', q } } as any)}
+                >
+                  <MaterialCommunityIcons name="plus" size={18} color="#fff" />
+                  <Text style={styles.addBtnText}>Añadir "{q}" como juego nuevo</Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null
         }
@@ -118,5 +136,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239,68,68,0.15)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)',
   },
   tagText: { color: theme.colors.error, fontSize: 11, fontWeight: '700' },
-  empty: { alignItems: 'center', paddingVertical: 40 },
+  empty: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 24, gap: 4 },
+  addBtn: {
+    marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: theme.colors.brandPrimary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999,
+  },
+  addBtnText: { color: '#fff', fontWeight: '600' },
 });

@@ -16,24 +16,34 @@ export default function Library() {
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
+  const requestIdRef = React.useRef(0);
 
-  const load = useCallback(async () => {
+  const loadPlatforms = useCallback(async () => {
     try {
-      const [pfs, gs] = await Promise.all([
-        api.listPlatforms(),
-        api.listGames(selectedPlatform ?? undefined, 300),
-      ]);
+      const pfs = await api.listPlatforms();
       setPlatforms(pfs);
-      setGames(gs);
     } catch (e) {
       console.warn(e);
-    } finally {
-      setLoading(false);
     }
-  }, [selectedPlatform]);
+  }, []);
 
-  useEffect(() => { setLoading(true); load(); }, [load]);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const loadGames = useCallback(async (platformSlug: string | null) => {
+    const myRequestId = ++requestIdRef.current;
+    try {
+      const gs = await api.listGames(platformSlug ?? undefined, 300);
+      if (myRequestId !== requestIdRef.current) return; // respuesta obsoleta, ignorar
+      setGames(gs);
+    } catch (e) {
+      if (myRequestId !== requestIdRef.current) return;
+      console.warn(e);
+    } finally {
+      if (myRequestId === requestIdRef.current) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadPlatforms(); }, [loadPlatforms]);
+  useEffect(() => { setLoading(true); loadGames(selectedPlatform); }, [selectedPlatform, loadGames]);
+  useFocusEffect(useCallback(() => { loadPlatforms(); loadGames(selectedPlatform); }, [loadPlatforms, loadGames, selectedPlatform]));
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.surface, paddingTop: insets.top + 8 }}>

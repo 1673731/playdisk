@@ -72,6 +72,11 @@ export const api = {
   deleteGame: (id: string) => req<{ success: boolean }>(`/games/${id}`, { method: 'DELETE' }),
   wishlist: () => req<Game[]>('/wishlist'),
   ranking: () => req<Game[]>('/games/ranking'),
+  reorderRanking: (orderedIds: string[]) =>
+    req<{ ok: boolean; count: number }>('/games/ranking/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ ordered_ids: orderedIds }),
+    }),
 
   getSettings: () => req<UserSettings>('/settings'),
   updateSettings: (data: Partial<UserSettings>) =>

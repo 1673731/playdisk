@@ -104,6 +104,7 @@ class Game(BaseModel):
     barcode: Optional[str] = None
     is_steelbook: bool = False
     version: Optional[str] = None
+    rank_order: Optional[int] = None
 
 class GameCreate(BaseModel):
     title: str
@@ -137,6 +138,7 @@ class GameUpdate(BaseModel):
     description: Optional[str] = None
     is_steelbook: Optional[bool] = None
     version: Optional[str] = None
+    rank_order: Optional[int] = None
 
 class Settings(BaseModel):
     shake_to_search: bool = True
@@ -591,8 +593,33 @@ async def search_games(q: str = "", platform: Optional[str] = None, limit: int =
 
 @api_router.get("/games/ranking", response_model=List[Game])
 async def get_ranking():
-    docs = await db.games.find({"in_wishlist": False, "rating": {"$gt": 0}}, {"_id": 0}).sort("rating", -1).to_list(100)
-    return [Game(**d) for d in docs]
+    docs = await db.games.find({"in_wishlist": False, "rating": {"$gt": 0}}, {"_id": 0}).to_list(500)
+    # Los juegos con un orden manual (rank_order, fijado al arrastrar en el
+    # ranking tipo tierlist) van primero, respetando ese orden. Los que
+    # todavía no se han reordenado a mano se añaden al final, ordenados por
+    # su nota como siempre.
+    with_order = sorted(
+        [d for d in docs if d.get("rank_order") is not None],
+        key=lambda d: d["rank_order"],
+    )
+    without_order = sorted(
+        [d for d in docs if d.get("rank_order") is None],
+        key=lambda d: d.get("rating", 0),
+        reverse=True,
+    )
+    return [Game(**d) for d in (with_order + without_order)]
+
+class RankingReorderRequest(BaseModel):
+    ordered_ids: List[str]
+
+@api_router.put("/games/ranking/reorder")
+async def reorder_ranking(payload: RankingReorderRequest):
+    """Persiste el nuevo orden manual tras arrastrar juegos en el ranking.
+    Recibe la lista completa de ids en el orden final deseado y les asigna
+    un rank_order secuencial (0, 1, 2...)."""
+    for idx, game_id in enumerate(payload.ordered_ids):
+        await db.games.update_one({"id": game_id}, {"$set": {"rank_order": idx}})
+    return {"ok": True, "count": len(payload.ordered_ids)}
 
 @api_router.get("/games/search-online")
 async def search_online(q: str = "", limit: int = 15):
@@ -612,9 +639,16 @@ async def search_online(q: str = "", limit: int = 15):
         "Accept": "application/json"
     }
     
-    # Hemos añadido la categoría 11 (Ports) por si acaso y quitado comillas conflictivas
-    # Usamos parent_game = null para evitar DLCs sin bugear el buscador de Twitch
-    body = f'search "{q}"; fields name, cover.url, platforms.name; where parent_game = null; limit {limit};'    
+    # Pedimos parent_game=null (como antes, esto sí es seguro y ya funcionaba)
+    # para evitar DLCs con juego padre. El filtro de categoría (para excluir
+    # bundles, packs, Game Pass, etc.) lo aplicamos DESPUÉS, en Python, sobre
+    # los resultados ya recibidos — filtrarlo dentro de la consulta a IGDB
+    # resultó ser demasiado frágil y podía devolver 0 resultados para
+    # búsquedas normales.
+    body = (
+        f'search "{q}"; fields name, cover.url, platforms.name, category; '
+        f'where parent_game = null; limit {limit};'
+    )
     try:
         async with httpx.AsyncClient() as client:
             r = await client.post(url, headers=headers, data=body)
@@ -630,8 +664,30 @@ async def search_online(q: str = "", limit: int = 15):
             if len(games) == 0:
                 print(f"\n--- ⚠️ IGDB no encontró NADA para la búsqueda: {q} ---\n")
 
+            # Categorías IGDB que dejamos pasar (excluye DLC, expansión,
+            # temporada, mod, pack y bundle, que es donde suelen colarse
+            # cosas tipo "Xbox Game Pass" o packs de suscripción):
+            #   0 = main_game, 8 = remake, 9 = remaster,
+            #   10 = expanded_game, 11 = port
+            # Si un resultado no trae categoría, lo dejamos pasar (mejor
+            # mostrar algo posiblemente de más que perder resultados legítimos
+            # por un dato ausente).
+            ALLOWED_CATEGORIES = {0, 8, 9, 10, 11}
+            EXCLUDED_NAME_KEYWORDS = (
+                "game pass", "xbox game pass", "ea play", "ps plus", "playstation plus",
+                "season pass", "dlc", "expansion pass", "bundle", "collector's edition upgrade",
+            )
+
             results = []
             for game_data in games:
+                category = game_data.get("category")
+                if category is not None and category not in ALLOWED_CATEGORIES:
+                    continue
+
+                name = (game_data.get("name") or "")
+                if any(kw in name.lower() for kw in EXCLUDED_NAME_KEYWORDS):
+                    continue
+
                 cover_url = None
                 if "cover" in game_data and "url" in game_data["cover"]:
                     cover_url = "https:" + game_data["cover"]["url"].replace("t_thumb", "t_cover_big")
@@ -667,13 +723,17 @@ async def get_game(game_id: str):
 @api_router.post("/games", response_model=Game)
 async def create_game(payload: GameCreate):
     # Comprobar si ya existe en la colección (no en wishlist)
+    or_conditions = [
+        {"title": payload.title, "platform": payload.platform}
+    ]
+    if payload.barcode:
+        or_conditions.append({"barcode": payload.barcode})
+
     query = {
         "in_wishlist": False,
-        "$or": [
-            {"barcode": payload.barcode, "barcode": {"$ne": None}},
-            {"title": payload.title, "platform": payload.platform}
-        ]
+        "$or": or_conditions,
     }
+
     
     existing = await db.games.find_one(query)
     if existing:
