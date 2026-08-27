@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -6,9 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  LinearTransition, runOnJS, useAnimatedStyle, useSharedValue, withSpring,
-} from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { theme, type Game, type Platform } from '@/src/theme';
 import { api } from '@/src/api';
@@ -17,19 +15,13 @@ const ROW_HEIGHT = 70;
 const ROW_GAP = 10;
 const SLOT_HEIGHT = ROW_HEIGHT + ROW_GAP;
 
-const SPRING_CONFIG = { damping: 22, stiffness: 260, mass: 0.9 };
-const SIBLING_TRANSITION = LinearTransition.springify().damping(24).stiffness(220);
-
 export default function Ranking() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [games, setGames] = useState<Game[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [loading, setLoading] = useState(true);
-  const [scrollLocked, setScrollLocked] = useState(false);
-  const gamesRef = useRef<Game[]>([]);
-
-  useEffect(() => { gamesRef.current = games; }, [games]);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -46,18 +38,27 @@ export default function Ranking() {
   useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Estos 3 shared values son "globales" (una sola instancia, compartida
-  // por referencia con todas las filas). Mientras se arrastra, cada fila
-  // vecina consulta estos valores para saber si tiene que desplazarse un
-  // hueco arriba o abajo — sin que el array de React (el estado 'games')
-  // cambie ni una sola vez durante el gesto. Esto es lo que elimina el
-  // tirón/glitch: antes, cada casilla cruzada reordenaba el array real y
-  // provocaba un re-render masivo de toda la lista en pleno gesto.
-  const dragActiveIndex = useSharedValue(-1);
-  const dragTargetIndex = useSharedValue(-1);
+  // 'liveOrder' es la ÚNICA fuente de verdad de "dónde está visualmente
+  // cada juego ahora mismo", compartida por referencia con todas las filas.
+  // Tanto durante el arrastre (donde se reordena en vivo con cada casilla
+  // cruzada) como justo después de soltar (antes de que React haya vuelto a
+  // renderizar con el array ya reordenado), TODAS las filas consultan esta
+  // misma lista para saber su posición. Como nunca hay dos fuentes de
+  // verdad distintas mezclándose (que era lo que causaba el solapamiento
+  // anterior), esto es robusto por construcción.
+  const liveOrder = useSharedValue<string[]>([]);
+  // Qué juego se está arrastrando activamente ahora mismo (para el efecto
+  // de escala/sombra). No afecta a la posición de nadie, solo al estilo.
+  const draggingItemId = useSharedValue<string | null>(null);
 
-  // El reordenamiento real de datos (y la llamada al backend) solo ocurre
-  // UNA VEZ, al soltar el dedo.
+  // Cada vez que la lista real cambia (carga inicial, o tras confirmarse un
+  // reordenamiento), resincronizamos liveOrder para que coincida. Si ya
+  // coincidía (caso normal tras soltar), esto no produce ningún cambio
+  // visual: es idempotente.
+  useEffect(() => {
+    liveOrder.value = games.map((g) => g.id);
+  }, [games]);
+
   const commitReorder = useCallback((fromIndex: number, toIndex: number) => {
     if (fromIndex === toIndex) return;
     setGames((prev) => {
@@ -86,7 +87,7 @@ export default function Ranking() {
           </Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 140 }} scrollEnabled={!scrollLocked}>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 140 }} scrollEnabled={!draggingId}>
           {games.map((item, index) => {
             const pf = platforms.find((p) => p.slug === item.platform);
             return (
@@ -96,10 +97,10 @@ export default function Ranking() {
                 index={index}
                 total={games.length}
                 pf={pf}
-                dragActiveIndex={dragActiveIndex}
-                dragTargetIndex={dragTargetIndex}
-                onDragStart={() => setScrollLocked(true)}
-                onDragEnd={() => setScrollLocked(false)}
+                liveOrder={liveOrder}
+                draggingItemId={draggingItemId}
+                onDragStart={() => setDraggingId(item.id)}
+                onDragEnd={() => setDraggingId(null)}
                 onCommitReorder={commitReorder}
                 onPress={() => { Haptics.selectionAsync().catch(() => {}); router.push(`/game/${item.id}` as any); }}
               />
@@ -112,86 +113,85 @@ export default function Ranking() {
 }
 
 function RankRow({
-  item, index, total, pf, dragActiveIndex, dragTargetIndex, onDragStart, onDragEnd, onCommitReorder, onPress,
+  item, index, total, pf, liveOrder, draggingItemId, onDragStart, onDragEnd, onCommitReorder, onPress,
 }: {
   item: Game;
   index: number;
   total: number;
   pf: Platform | undefined;
-  dragActiveIndex: ReturnType<typeof useSharedValue<number>>;
-  dragTargetIndex: ReturnType<typeof useSharedValue<number>>;
+  liveOrder: ReturnType<typeof useSharedValue<string[]>>;
+  draggingItemId: ReturnType<typeof useSharedValue<string | null>>;
   onDragStart: () => void;
   onDragEnd: () => void;
   onCommitReorder: (from: number, to: number) => void;
   onPress: () => void;
 }) {
-  // Posición del dedo mientras arrastramos ESTA fila (solo se usa cuando
-  // esta fila es la que se está arrastrando activamente).
   const rawTranslateY = useSharedValue(0);
-
-  const finishDrag = (from: number, to: number) => {
-    onCommitReorder(from, to);
-    onDragEnd();
-  };
+  const startIndex = useSharedValue(0);
 
   const pan = Gesture.Pan()
     .onStart(() => {
-      dragActiveIndex.value = index; // 'index' es el valor de la última renderización: correcto, porque el gesto se recrea en cada render
-      dragTargetIndex.value = index;
+      draggingItemId.value = item.id;
+      startIndex.value = index; // 'index' es el valor de la última renderización: correcto, porque el gesto se recrea en cada render
       rawTranslateY.value = 0;
       runOnJS(onDragStart)();
     })
     .onUpdate((e) => {
       rawTranslateY.value = e.translationY;
-      const from = dragActiveIndex.value;
-      const rawTarget = from + Math.round(e.translationY / SLOT_HEIGHT);
-      dragTargetIndex.value = Math.max(0, Math.min(total - 1, rawTarget));
+      // Reordenamos liveOrder EN VIVO conforme cruzamos cada casilla, para
+      // que los vecinos abran hueco de verdad mientras arrastramos.
+      const target = Math.max(0, Math.min(total - 1, startIndex.value + Math.round(e.translationY / SLOT_HEIGHT)));
+      const order = liveOrder.value;
+      const currentPos = order.indexOf(item.id);
+      if (currentPos !== -1 && currentPos !== target) {
+        const next = order.slice();
+        next.splice(currentPos, 1);
+        next.splice(target, 0, item.id);
+        liveOrder.value = next;
+      }
     })
     .onEnd(() => {
-      const from = dragActiveIndex.value;
-      const to = dragTargetIndex.value;
-      // Encajamos la fila arrastrada exactamente en el hueco de destino
-      // antes de soltar los datos, para que al confirmarse el reordenamiento
-      // real no haya ningún salto visual (la posición ya coincide).
-      rawTranslateY.value = withSpring((to - from) * SLOT_HEIGHT, SPRING_CONFIG);
-      runOnJS(finishDrag)(from, to);
+      const finalIndex = liveOrder.value.indexOf(item.id);
+      const from = startIndex.value;
+      rawTranslateY.value = 0;
+      draggingItemId.value = null;
+      runOnJS(onCommitReorder)(from, finalIndex === -1 ? from : finalIndex);
+      runOnJS(onDragEnd)();
     })
     .onFinalize(() => {
-      dragActiveIndex.value = -1;
-      dragTargetIndex.value = -1;
       rawTranslateY.value = 0;
+      draggingItemId.value = null;
     });
 
   const animatedStyle = useAnimatedStyle(() => {
-    const isDraggedRow = dragActiveIndex.value === index;
+    const isMe = draggingItemId.value === item.id;
 
-    if (isDraggedRow) {
+    if (isMe) {
       return {
         transform: [
           { translateY: rawTranslateY.value },
-          { scale: withSpring(1.035, SPRING_CONFIG) },
+          { scale: 1.035 },
         ],
         zIndex: 100,
-        shadowOpacity: withSpring(0.4, SPRING_CONFIG),
+        shadowOpacity: 0.4,
         elevation: 10,
       };
     }
 
-    // Filas vecinas: si hay un arrastre en curso, calculamos si esta fila
-    // debe abrir hueco desplazándose una posición arriba o abajo — sin
-    // tocar el array real, solo visualmente.
-    const from = dragActiveIndex.value;
-    const to = dragTargetIndex.value;
-    let shiftSlots = 0;
-    if (from !== -1 && to !== -1) {
-      if (from < to && index > from && index <= to) shiftSlots = -1;
-      else if (from > to && index >= to && index < from) shiftSlots = 1;
-    }
+    // No soy la fila arrastrada: me coloco donde diga liveOrder (mi
+    // posición "visual en vivo"), relativa a mi posición real actual
+    // (index, el prop que me da React). Esta resta es la clave de que todo
+    // encaje sin saltos: en cuanto React termine de reordenar de verdad y
+    // mi 'index' pase a coincidir con mi posición en liveOrder, este
+    // desplazamiento se vuelve 0 sin que nadie tenga que "resetear" nada a
+    // mano ni esperar a ningún momento concreto.
+    const liveIdx = liveOrder.value.indexOf(item.id);
+    const offset = liveIdx === -1 ? 0 : (liveIdx - index) * SLOT_HEIGHT;
 
     return {
       transform: [
-        { translateY: withSpring(shiftSlots * SLOT_HEIGHT, SPRING_CONFIG) },
-        { scale: withSpring(1, SPRING_CONFIG) },
+        { translateY: offset },
+        { scale: 1 },
       ],
       zIndex: 0,
       shadowOpacity: 0,
@@ -203,7 +203,6 @@ function RankRow({
 
   return (
     <Animated.View
-      layout={SIBLING_TRANSITION}
       style={[
         styles.row,
         animatedStyle,
