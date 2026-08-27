@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Mi Colección",
-    "slug": "mi-coleccion",
+    "name": "PlayDisk",
+    "slug": "playdisk",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
