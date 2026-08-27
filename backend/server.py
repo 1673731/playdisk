@@ -456,6 +456,22 @@ CONSOLE_ICON_RULES = [
     (r"\bios\b|iphone|ipad", "cellphone", "#999999", "otros", "IOS"),
 ]
 
+# Plataformas que, por su propia naturaleza, nunca han tenido formato
+# físico (navegador, streaming en la nube, móvil, VR...). Esta app cataloga
+# copias físicas, así que las excluimos de los resultados de búsqueda.
+DIGITAL_ONLY_PLATFORM_PATTERNS = [
+    r"browser", r"web browser", r"google\s*stadia", r"amazon\s*luna",
+    r"facebook\s*gameroom", r"oculus", r"meta\s*quest", r"\bvr\b",
+    r"playstation\s*vr", r"\bouya\b", r"\bios\b", r"\bandroid\b",
+    r"windows\s*phone", r"apple\s*arcade", r"itch\.io", r"\bmobile\b",
+    r"blackberry", r"legacy\s*mobile\s*device", r"n-gage", r"java\s*me",
+    r"digiblast", r"onlive", r"gakken\s*compact\s*vision",
+]
+
+def is_digital_only_platform(platform_name: str) -> bool:
+    t = (platform_name or "").lower()
+    return any(re.search(p, t) for p in DIGITAL_ONLY_PLATFORM_PATTERNS)
+
 def console_icon_for(platform_name: str):
     """Devuelve (icon, color, family_slug, badge) para una plataforma
     concreta. El 'badge' son las siglas cortas de la consola exacta,
@@ -823,13 +839,20 @@ async def search_online(q: str = "", limit: int = 15):
                 if "cover" in game_data and "url" in game_data["cover"]:
                     cover_url = "https:" + game_data["cover"]["url"].replace("t_thumb", "t_cover_big")
                 
-                # Una tarjeta de resultado POR CADA plataforma real en la
-                # que existe el juego (no una sola mezclando todas), para
+                # Una tarjeta de resultado POR CADA plataforma FÍSICA real en
+                # la que existe el juego (no una sola mezclando todas), para
                 # que el icono y el nombre de consola sean siempre exactos.
+                # Excluimos plataformas que por naturaleza son digitales/
+                # online (navegador, móvil, streaming en la nube, VR...), ya
+                # que esta app cataloga copias físicas que alguien tiene.
                 platform_entries = game_data.get("platforms") or []
-                platform_names = [p.get("name", "") for p in platform_entries if p.get("name")]
+                all_names = [p.get("name", "") for p in platform_entries if p.get("name")]
+                platform_names = [n for n in all_names if not is_digital_only_platform(n)]
                 if not platform_names:
-                    platform_names = ["Desconocido"]
+                    # El juego solo existe en plataformas digitales/online
+                    # (p.ej. un spin-off exclusivo de navegador): lo saltamos
+                    # entero, no tiene sentido para un catálogo físico.
+                    continue
 
                 seen_family = set()
                 for plat_name in platform_names:

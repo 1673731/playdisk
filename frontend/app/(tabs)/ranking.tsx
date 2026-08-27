@@ -17,7 +17,6 @@ const ROW_HEIGHT = 70;
 const ROW_GAP = 10;
 const SLOT_HEIGHT = ROW_HEIGHT + ROW_GAP;
 
-// Muelle suave y "profesional": poco rebote, movimiento fluido.
 const SPRING_CONFIG = { damping: 22, stiffness: 260, mass: 0.9 };
 const SIBLING_TRANSITION = LinearTransition.springify().damping(24).stiffness(220);
 
@@ -27,7 +26,7 @@ export default function Ranking() {
   const [games, setGames] = useState<Game[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [loading, setLoading] = useState(true);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [scrollLocked, setScrollLocked] = useState(false);
   const gamesRef = useRef<Game[]>([]);
 
   useEffect(() => { gamesRef.current = games; }, [games]);
@@ -47,22 +46,27 @@ export default function Ranking() {
   useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Reordena el array EN VIVO mientras se arrastra (no espera a soltar), para
-  // que los demás juegos se desplacen de verdad al pasar por encima, como un
-  // hueco que se abre. No llama al backend en cada paso: eso se hace una
-  // sola vez al soltar (handlePersist), para no saturar de peticiones.
-  const handleLiveReorder = useCallback((fromIndex: number, toIndex: number) => {
+  // Estos 3 shared values son "globales" (una sola instancia, compartida
+  // por referencia con todas las filas). Mientras se arrastra, cada fila
+  // vecina consulta estos valores para saber si tiene que desplazarse un
+  // hueco arriba o abajo — sin que el array de React (el estado 'games')
+  // cambie ni una sola vez durante el gesto. Esto es lo que elimina el
+  // tirón/glitch: antes, cada casilla cruzada reordenaba el array real y
+  // provocaba un re-render masivo de toda la lista en pleno gesto.
+  const dragActiveIndex = useSharedValue(-1);
+  const dragTargetIndex = useSharedValue(-1);
+
+  // El reordenamiento real de datos (y la llamada al backend) solo ocurre
+  // UNA VEZ, al soltar el dedo.
+  const commitReorder = useCallback((fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
     setGames((prev) => {
-      if (fromIndex < 0 || fromIndex >= prev.length) return prev;
       const next = [...prev];
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
+      api.reorderRanking(next.map((g) => g.id)).catch((e) => console.warn('No se pudo guardar el orden', e));
       return next;
     });
-  }, []);
-
-  const handlePersist = useCallback(() => {
-    api.reorderRanking(gamesRef.current.map((g) => g.id)).catch((e) => console.warn('No se pudo guardar el orden', e));
   }, []);
 
   return (
@@ -82,7 +86,7 @@ export default function Ranking() {
           </Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 140 }} scrollEnabled={!draggingId}>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 140 }} scrollEnabled={!scrollLocked}>
           {games.map((item, index) => {
             const pf = platforms.find((p) => p.slug === item.platform);
             return (
@@ -92,11 +96,11 @@ export default function Ranking() {
                 index={index}
                 total={games.length}
                 pf={pf}
-                isDragging={draggingId === item.id}
-                onDragStart={() => setDraggingId(item.id)}
-                onDragEnd={() => setDraggingId(null)}
-                onLiveReorder={handleLiveReorder}
-                onPersist={handlePersist}
+                dragActiveIndex={dragActiveIndex}
+                dragTargetIndex={dragTargetIndex}
+                onDragStart={() => setScrollLocked(true)}
+                onDragEnd={() => setScrollLocked(false)}
+                onCommitReorder={commitReorder}
                 onPress={() => { Haptics.selectionAsync().catch(() => {}); router.push(`/game/${item.id}` as any); }}
               />
             );
@@ -108,82 +112,98 @@ export default function Ranking() {
 }
 
 function RankRow({
-  item, index, total, pf, isDragging, onDragStart, onDragEnd, onLiveReorder, onPersist, onPress,
+  item, index, total, pf, dragActiveIndex, dragTargetIndex, onDragStart, onDragEnd, onCommitReorder, onPress,
 }: {
   item: Game;
   index: number;
   total: number;
   pf: Platform | undefined;
-  isDragging: boolean;
+  dragActiveIndex: ReturnType<typeof useSharedValue<number>>;
+  dragTargetIndex: ReturnType<typeof useSharedValue<number>>;
   onDragStart: () => void;
   onDragEnd: () => void;
-  onLiveReorder: (from: number, to: number) => void;
-  onPersist: () => void;
+  onCommitReorder: (from: number, to: number) => void;
   onPress: () => void;
 }) {
-  const translateY = useSharedValue(0);
-  const dragging = useSharedValue(false);
-  // Todo lo que hay que leer/escribir DENTRO del gesto (hilo de UI) debe ser
-  // un shared value, nunca una ref normal de React ni el prop 'index' leído
-  // a mitad de gesto (ver bug anterior: una ref no es fiable cruzando hilos).
-  const startIndex = useSharedValue(index);
-  const lastReportedIndex = useSharedValue(index);
+  // Posición del dedo mientras arrastramos ESTA fila (solo se usa cuando
+  // esta fila es la que se está arrastrando activamente).
+  const rawTranslateY = useSharedValue(0);
+
+  const finishDrag = (from: number, to: number) => {
+    onCommitReorder(from, to);
+    onDragEnd();
+  };
 
   const pan = Gesture.Pan()
     .onStart(() => {
-      startIndex.value = index; // valor de la última renderización: correcto, porque el gesto se recrea en cada render
-      lastReportedIndex.value = index;
-      dragging.value = true;
+      dragActiveIndex.value = index; // 'index' es el valor de la última renderización: correcto, porque el gesto se recrea en cada render
+      dragTargetIndex.value = index;
+      rawTranslateY.value = 0;
       runOnJS(onDragStart)();
     })
     .onUpdate((e) => {
-      // 'consumedSlots' = cuántas plazas ya hemos "gastado" reordenando el
-      // array en vivo. Restamos ese desplazamiento para que el dedo y la
-      // tarjeta sigan coincidiendo exactamente, en vez de sumarse el
-      // desplazamiento del reordenamiento Y el del dedo (que haría que la
-      // tarjeta saltara de más).
-      const consumedSlots = lastReportedIndex.value - startIndex.value;
-      translateY.value = e.translationY - consumedSlots * SLOT_HEIGHT;
-
-      const rawTarget = startIndex.value + Math.round(e.translationY / SLOT_HEIGHT);
-      const clamped = Math.max(0, Math.min(total - 1, rawTarget));
-      if (clamped !== lastReportedIndex.value) {
-        const from = lastReportedIndex.value;
-        lastReportedIndex.value = clamped;
-        runOnJS(onLiveReorder)(from, clamped);
-        // Recalculamos ya mismo con el nuevo desplazamiento consumido para
-        // que no haya un salto visual de un frame antes de la siguiente
-        // actualización del gesto.
-        translateY.value = e.translationY - (clamped - startIndex.value) * SLOT_HEIGHT;
-      }
+      rawTranslateY.value = e.translationY;
+      const from = dragActiveIndex.value;
+      const rawTarget = from + Math.round(e.translationY / SLOT_HEIGHT);
+      dragTargetIndex.value = Math.max(0, Math.min(total - 1, rawTarget));
     })
     .onEnd(() => {
-      translateY.value = withSpring(0, SPRING_CONFIG);
-      dragging.value = false;
-      runOnJS(onDragEnd)();
-      runOnJS(onPersist)();
+      const from = dragActiveIndex.value;
+      const to = dragTargetIndex.value;
+      // Encajamos la fila arrastrada exactamente en el hueco de destino
+      // antes de soltar los datos, para que al confirmarse el reordenamiento
+      // real no haya ningún salto visual (la posición ya coincide).
+      rawTranslateY.value = withSpring((to - from) * SLOT_HEIGHT, SPRING_CONFIG);
+      runOnJS(finishDrag)(from, to);
     })
     .onFinalize(() => {
-      dragging.value = false;
-      translateY.value = withSpring(0, SPRING_CONFIG);
-      runOnJS(onDragEnd)();
+      dragActiveIndex.value = -1;
+      dragTargetIndex.value = -1;
+      rawTranslateY.value = 0;
     });
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: translateY.value },
-      { scale: withSpring(dragging.value ? 1.035 : 1, SPRING_CONFIG) },
-    ],
-    zIndex: dragging.value ? 100 : 0,
-    shadowOpacity: withSpring(dragging.value ? 0.4 : 0, SPRING_CONFIG),
-    elevation: dragging.value ? 10 : 0,
-  }));
+  const animatedStyle = useAnimatedStyle(() => {
+    const isDraggedRow = dragActiveIndex.value === index;
+
+    if (isDraggedRow) {
+      return {
+        transform: [
+          { translateY: rawTranslateY.value },
+          { scale: withSpring(1.035, SPRING_CONFIG) },
+        ],
+        zIndex: 100,
+        shadowOpacity: withSpring(0.4, SPRING_CONFIG),
+        elevation: 10,
+      };
+    }
+
+    // Filas vecinas: si hay un arrastre en curso, calculamos si esta fila
+    // debe abrir hueco desplazándose una posición arriba o abajo — sin
+    // tocar el array real, solo visualmente.
+    const from = dragActiveIndex.value;
+    const to = dragTargetIndex.value;
+    let shiftSlots = 0;
+    if (from !== -1 && to !== -1) {
+      if (from < to && index > from && index <= to) shiftSlots = -1;
+      else if (from > to && index >= to && index < from) shiftSlots = 1;
+    }
+
+    return {
+      transform: [
+        { translateY: withSpring(shiftSlots * SLOT_HEIGHT, SPRING_CONFIG) },
+        { scale: withSpring(1, SPRING_CONFIG) },
+      ],
+      zIndex: 0,
+      shadowOpacity: 0,
+      elevation: 0,
+    };
+  });
 
   const isFirst = index === 0;
 
   return (
     <Animated.View
-      layout={isDragging ? undefined : SIBLING_TRANSITION}
+      layout={SIBLING_TRANSITION}
       style={[
         styles.row,
         animatedStyle,
