@@ -13,20 +13,14 @@
       "android": {
         "buildType": "apk"
       },
-      "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://tu-backend-real.com",
-        "EXPO_PUBLIC_API_KEY": "PON_AQUI_TU_API_KEY_REAL"
-      }
+      "environment": "preview"
     },
     "production": {
       "autoIncrement": "versionCode",
       "android": {
         "buildType": "app-bundle"
       },
-      "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://tu-backend-real.com",
-        "EXPO_PUBLIC_API_KEY": "PON_AQUI_TU_API_KEY_REAL"
-      }
+      "environment": "production"
     }
   },
   "submit": {
