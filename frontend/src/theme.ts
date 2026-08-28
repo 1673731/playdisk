@@ -57,6 +57,10 @@ export type Game = {
   barcode?: string | null;
   is_steelbook?: boolean;
   version?: string | null;
+  rank_order?: number | null;
+  console_icon?: string | null;
+  console_color?: string | null;
+  console_badge?: string | null;
 };
 
 export type UserSettings = {

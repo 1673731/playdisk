@@ -241,6 +241,9 @@ function PlatformChip({ slug, icon, name, color, selected, onPress }: any) {
 
 function RecentGameCard({ game, platform }: { game: Game; platform?: Platform }) {
   const added = formatDistanceToNow(new Date(game.added_at), { locale: es, addSuffix: true });
+  const icon = game.console_icon || platform?.icon;
+  const color = game.console_color || platform?.color;
+  const label = game.console_badge || platform?.name || game.platform;
   return (
     <View style={styles.gameCard}>
       <View style={styles.coverWrap}>
@@ -255,8 +258,8 @@ function RecentGameCard({ game, platform }: { game: Game; platform?: Platform })
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={styles.gameTitle} numberOfLines={1}>{game.title}</Text>
         <View style={styles.gameMetaRow}>
-          {platform && <MaterialCommunityIcons name={platform.icon as any} size={12} color={platform.color} />}
-          <Text style={styles.gameMetaText}>{platform?.name ?? game.platform}</Text>
+          {icon && <MaterialCommunityIcons name={icon as any} size={12} color={color} />}
+          <Text style={styles.gameMetaText}>{label}</Text>
           {game.is_gift && (
             <>
               <Text style={styles.gameMetaText}>·</Text>
@@ -275,9 +278,9 @@ function RecentGameCard({ game, platform }: { game: Game; platform?: Platform })
         </View>
         <Text style={styles.gameDateText}>Añadido {added}</Text>
       </View>
-      {platform && (
-        <View style={[styles.platformPill, { backgroundColor: `${platform.color}22`, borderColor: `${platform.color}55` }]}>
-          <MaterialCommunityIcons name={platform.icon as any} size={11} color={platform.color} />
+      {icon && (
+        <View style={[styles.platformPill, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
+          <MaterialCommunityIcons name={icon as any} size={11} color={color} />
         </View>
       )}
     </View>

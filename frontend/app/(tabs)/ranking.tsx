@@ -221,10 +221,16 @@ function RankRow({
         )}
         <View style={{ flex: 1 }}>
           <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
-          {pf && (
+          {(item.console_icon || pf) && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-              <MaterialCommunityIcons name={pf.icon as any} size={12} color={pf.color} />
-              <Text style={{ color: theme.colors.onSurfaceTertiary, fontSize: 12 }}>{pf.name}</Text>
+              <MaterialCommunityIcons
+                name={(item.console_icon as any) || (pf?.icon as any)}
+                size={12}
+                color={item.console_color || pf?.color}
+              />
+              <Text style={{ color: item.console_color || theme.colors.onSurfaceTertiary, fontSize: 12 }}>
+                {item.console_badge || pf?.name}
+              </Text>
             </View>
           )}
         </View>

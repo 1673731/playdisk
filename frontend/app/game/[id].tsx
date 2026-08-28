@@ -157,7 +157,14 @@ export default function GameDetail() {
         )}
         <View style={styles.headerInfo}>
           <Text style={styles.title}>{game.title}</Text>
-          <Text style={styles.platform}>{game.platform}{game.version ? ` · ${game.version}` : ''}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+            {game.console_icon && (
+              <MaterialCommunityIcons name={game.console_icon as any} size={15} color={game.console_color || '#aaa'} />
+            )}
+            <Text style={[styles.platform, { marginBottom: 0, color: game.console_color || '#aaa' }]}>
+              {game.console_badge || game.platform}{game.version ? ` · ${game.version}` : ''}
+            </Text>
+          </View>
           {game.is_steelbook && (
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
               <MaterialCommunityIcons name="cube-outline" size={14} color="#C0C0C0" />

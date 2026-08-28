@@ -105,6 +105,14 @@ class Game(BaseModel):
     is_steelbook: bool = False
     version: Optional[str] = None
     rank_order: Optional[int] = None
+    # Calculados automáticamente a partir de 'version' (o 'platform' si no
+    # hay version guardada), para que Biblioteca/Inicio/Ranking puedan
+    # mostrar el mismo icono, color y siglas específicos de consola que ya
+    # se ven en el buscador — no se guardan en la base de datos, se
+    # recalculan al servir cada juego (ver attach_console_badge()).
+    console_icon: Optional[str] = None
+    console_color: Optional[str] = None
+    console_badge: Optional[str] = None
 
 class GameCreate(BaseModel):
     title: str
@@ -485,6 +493,21 @@ def console_icon_for(platform_name: str):
     fallback_badge = (platform_name or "?").strip()[:8].upper() or "?"
     return "gamepad-variant", "#888888", fam, fallback_badge
 
+def attach_console_badge(doc: dict) -> dict:
+    """Rellena console_icon/console_color/console_badge de un documento de
+    juego, calculándolos a partir de 'version' (el nombre exacto de consola
+    guardado al añadir el juego) o, si no hay version, a partir de
+    'platform' (la familia genérica). Se llama justo antes de construir el
+    modelo Game en cualquier endpoint que devuelva juegos, para que
+    Biblioteca/Inicio/Ranking muestren el mismo icono específico de consola
+    que ya se ve en el buscador."""
+    source_text = doc.get("version") or doc.get("platform") or ""
+    icon, color, _family, badge = console_icon_for(source_text)
+    doc["console_icon"] = icon
+    doc["console_color"] = color
+    doc["console_badge"] = badge
+    return doc
+
 # ---------- Barcode & Consoles Cleaner ----------
 GAME_KEYWORDS = ["video game", "videojuego", "playstation", "xbox", "nintendo", "switch", "ps4", "ps5", "ps3", "ps2", "psp", "vita", "gameboy", "steam", "sega", "genesis", "megadrive", "wii", "3ds", "atari", "gamecube"]
 
@@ -710,7 +733,7 @@ async def list_games(platform: Optional[str] = None, wishlist: Optional[bool] = 
     else:
         query["in_wishlist"] = False
     docs = await db.games.find(query, {"_id": 0}).sort("added_at", -1).to_list(limit)
-    return [Game(**d) for d in docs]
+    return [Game(**attach_console_badge(d)) for d in docs]
 
 @api_router.get("/games/stats")
 async def games_stats(platform: Optional[str] = None):
@@ -736,7 +759,7 @@ async def search_games(q: str = "", platform: Optional[str] = None, limit: int =
     if platform:
         query["platform"] = platform
     docs = await db.games.find(query, {"_id": 0}).limit(limit).to_list(limit)
-    return [Game(**d) for d in docs]
+    return [Game(**attach_console_badge(d)) for d in docs]
 
 @api_router.get("/games/ranking", response_model=List[Game])
 async def get_ranking():
@@ -754,7 +777,7 @@ async def get_ranking():
         key=lambda d: d.get("rating", 0),
         reverse=True,
     )
-    return [Game(**d) for d in (with_order + without_order)]
+    return [Game(**attach_console_badge(d)) for d in (with_order + without_order)]
 
 class RankingReorderRequest(BaseModel):
     ordered_ids: List[str]
@@ -886,7 +909,7 @@ async def get_game(game_id: str):
     doc = await db.games.find_one({"id": game_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Game not found")
-    return Game(**doc)
+    return Game(**attach_console_badge(doc))
 
 @api_router.post("/games", response_model=Game)
 async def create_game(payload: GameCreate):
@@ -907,7 +930,7 @@ async def create_game(payload: GameCreate):
     if existing:
         raise HTTPException(status_code=409, detail="Ya tienes este juego en tu colección.")
 
-    game = Game(**payload.dict())
+    game = Game(**attach_console_badge(payload.dict()))
     doc = game.dict()
     await db.games.insert_one(doc)
     
@@ -923,7 +946,7 @@ async def update_game(game_id: str, payload: GameUpdate):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Game not found")
     doc = await db.games.find_one({"id": game_id}, {"_id": 0})
-    return Game(**doc)
+    return Game(**attach_console_badge(doc))
 
 @api_router.delete("/games/{game_id}")
 async def delete_game(game_id: str):
@@ -935,7 +958,7 @@ async def delete_game(game_id: str):
 @api_router.get("/wishlist", response_model=List[Game])
 async def get_wishlist():
     docs = await db.games.find({"in_wishlist": True}, {"_id": 0}).sort("added_at", -1).to_list(200)
-    return [Game(**d) for d in docs]
+    return [Game(**attach_console_badge(d)) for d in docs]
 
 # ---------- Settings ----------
 @api_router.get("/settings")

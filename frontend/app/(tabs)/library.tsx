@@ -97,10 +97,16 @@ export default function Library() {
                   )}
                 </View>
                 <Text style={styles.gridTitle} numberOfLines={2}>{item.title}</Text>
-                {pf && (
+                {(item.console_icon || pf) && (
                   <View style={styles.gridPlatform}>
-                    <MaterialCommunityIcons name={pf.icon as any} size={13} color={pf.color} />
-                    <Text style={[styles.gridPlatformText, { color: pf.color }]}>{pf.name}</Text>
+                    <MaterialCommunityIcons
+                      name={(item.console_icon as any) || (pf?.icon as any)}
+                      size={13}
+                      color={item.console_color || pf?.color}
+                    />
+                    <Text style={[styles.gridPlatformText, { color: item.console_color || pf?.color }]}>
+                      {item.console_badge || pf?.name}
+                    </Text>
                   </View>
                 )}
               </Pressable>
